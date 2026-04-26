@@ -29,6 +29,11 @@ tools:
 - **DO NOT** 忽略兼容性检测失败继续处理
 - **ONLY** 处理deb包到玲珑打包的转换工作
 
+## 默认设定
+- 若未指定base，则默认使用`org.deepin.base/25.2.2`
+- 若未指定runtime，则默认使用`org.deepin.runtime.dtk/25.2.2`
+
+
 ## 工作流程
 
 ### Phase 1: 初始化
