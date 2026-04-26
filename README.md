@@ -1,0 +1,290 @@
+# linyaps-app-packaging-script-generator 使用指南
+
+## 概述
+
+本工具集用于将Debian软件包(.deb)批量转换为玲珑(Linglong)便捷打包脚本，实现自动化打包适配。
+
+## 目录结构
+
+```
+common-data-verify/
+├── .agents/                          # Agent和Skills定义
+│   ├── agents/
+│   │   └── deb-linglong-packer.agent.md  # 主Agent
+│   └── skills/
+│       ├── deb-analysis/SKILL.md         # Deb包分析
+│       ├── linglong-project-gen/SKILL.md # 工程生成
+│       ├── resource-collector/SKILL.md   # 资源收集
+│       ├── compat-testing/SKILL.md       # 兼容性测试
+│       └── linglong-fix/SKILL.md         # 问题修复
+├── config/
+│   └── packages.csv                      # 批量配置文件
+├── deb_to_linglong.py                    # Deb解析工具
+├── common-data-verify.py                 # 目录结构验证
+├── validate_linglong_yaml.py             # YAML格式验证
+└── demos/
+    └── compat_checker.py                 # 兼容性检测
+```
+
+## 快速开始
+
+### 1. 使用Agent批量处理
+
+在VS Code Chat中输入：
+
+```
+@deb-linglong-packer /path/to/deb/directory
+```
+
+或使用CSV配置：
+
+```
+@deb-linglong-packer config/packages.csv
+```
+
+### 2. 单独使用Skills
+
+#### Deb包分析
+```
+/deb-analysis /path/to/package.deb
+```
+
+#### 工程生成
+```
+/linglong-project-gen com.example.app
+```
+
+#### 资源收集
+```
+/resource-collector /tmp/extracted CI_ll_com.example.app
+```
+
+#### 兼容性测试
+```
+/compat-testing CI_ll_com.example.app
+```
+
+#### 问题修复
+```
+/linglong-fix CI_ll_com.example.app
+```
+
+## CSV配置格式
+
+```csv
+package_name,deb_path,architecture,base,runtime,push
+com.visualstudio.code,/path/to/code.deb,x86_64,org.deepin.base/23.1.0,org.deepin.runtime.dtk/23.1.0,true
+```
+
+| 列名 | 说明 | 示例 |
+|-----|------|------|
+| package_name | 玲珑包ID | com.visualstudio.code |
+| deb_path | deb文件路径 | /path/to/code.deb |
+| architecture | 目标架构 | x86_64 或 aarch64 |
+| base | 基础运行时 | org.deepin.base/23.1.0 |
+| runtime | 应用运行时 | org.deepin.runtime.dtk/23.1.0 |
+| push | 是否自动推送 | true 或 false |
+
+### 多架构支持
+
+同一包名可指定多行：
+
+```csv
+package_name,deb_path,architecture,base,runtime,push
+com.visualstudio.code,/path/to/code_amd64.deb,x86_64,org.deepin.base/23.1.0,org.deepin.runtime.dtk/23.1.0,true
+com.visualstudio.code,/path/to/code_arm64.deb,aarch64,org.deepin.base/23.1.0,org.deepin.runtime.dtk/23.1.0,true
+```
+
+## 工作流程
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    Deb玲珑化批量打包流程                      │
+└─────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────┐
+│ 1. Deb分析 (deb-analysis)                                    │
+│    - 解析deb元数据                                           │
+│    - 解压deb文件                                             │
+│    - 提取文件结构                                            │
+└─────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────┐
+│ 2. 工程生成 (linglong-project-gen)                           │
+│    - 创建 CI_ll_<package_id> 目录                            │
+│    - 生成 linglong.yaml                                      │
+│    - 生成 pak_linyaps.sh                                     │
+└─────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────┐
+│ 3. 资源收集 (resource-collector)                             │
+│    - 提取desktop、icons、appdata                             │
+│    - 整理到 files_res/                                       │
+│    - 验证资源合规性                                           │
+│    ⏸️  等待用户确认                                          │
+└─────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────┐
+│ 4. 兼容性测试 (compat-testing)                               │
+│    - 验证linglong.yaml格式                                   │
+│    - 验证资源目录结构                                         │
+│    - 执行打包测试                                             │
+│    - 运行兼容性检测                                           │
+└─────────────────────────────────────────────────────────────┘
+                              │
+                    ┌─────────┴─────────┐
+                    │                   │
+              测试通过 ▼             测试失败 ▼
+┌───────────────────────────┐  ┌───────────────────────────┐
+│ 5. 完成                    │  │ 5. 问题修复 (linglong-fix) │
+│    - 保存工程              │  │    - 修复YAML格式          │
+│    - 清理临时文件          │  │    - 修复desktop文件       │
+│    - 更新任务状态          │  │    - 修复图标目录          │
+└───────────────────────────┘  │    - 重新测试              │
+                                └───────────────────────────┘
+```
+
+## 输出工程结构
+
+```
+CI_ll_com.example.app/
+├── pak_linyaps.sh              # 打包脚本
+├── src/                        # 源文件目录
+│   └── app_1.0.0_amd64.deb     # 放置deb包
+├── templates/
+│   ├── linglong.yaml           # 玲珑配置模板
+│   └── files_res/              # 资源文件
+│       └── share/
+│           ├── applications/
+│           │   └── com.example.app.desktop
+│           ├── icons/
+│           │   └── hicolor/
+│           │       ├── 48x48/apps/
+│           │       └── scalable/apps/
+│           ├── appdata/
+│           │   └── com.example.app.appdata.xml
+│           └── ...
+├── bins/                       # 构建输出
+│   └── *binary.layer
+└── reports/                    # 测试报告
+    ├── yaml_validation.json
+    ├── structure_validation.json
+    └── build.log
+```
+
+## 命令行工具使用
+
+### deb_to_linglong.py
+
+```bash
+# 基本用法
+python3 deb_to_linglong.py package.deb --base org.deepin.base/23.1.0
+
+# 完整参数
+python3 deb_to_linglong.py package.deb \
+  --base org.deepin.base/23.1.0 \
+  --runtime org.deepin.runtime.dtk/23.1.0 \
+  --extract-dir /tmp/extracted \
+  --output-dir ./output \
+  --arch-map "amd64=x86_64,arm64=aarch64"
+```
+
+### common-data-verify.py
+
+```bash
+# 验证目录结构
+python3 common-data-verify.py ./files_res
+
+# 输出JSON报告
+python3 common-data-verify.py ./files_res --json --output report.json
+```
+
+### validate_linglong_yaml.py
+
+```bash
+# 验证YAML格式
+python3 validate_linglong_yaml.py \
+  --input linglong.yaml \
+  --exec-name "app %U"
+
+# 带版本检查
+python3 validate_linglong_yaml.py \
+  --input linglong.yaml \
+  --exec-name "app %U" \
+  --last-ver "1.0.0.0" \
+  --json
+```
+
+### compat_checker.py
+
+```python
+from demos.compat_checker import CompatChecker
+from pathlib import Path
+
+checker = CompatChecker(
+    build_dir=Path("/path/to/build"),
+    enable_compat_check=True,
+    timeout=30
+)
+
+success, message = checker.check()
+print(f"Status: {checker.get_status()}")
+```
+
+## 打包脚本使用
+
+```bash
+cd CI_ll_com.example.app
+
+# 准备源文件
+cp /path/to/package.deb src/
+
+# 执行打包
+./pak_linyaps.sh \
+  --linyaps_arch=x86_64 \
+  --origin_version=1.0.0 \
+  --src_path=src/package.deb \
+  --output_dir=bins
+
+# 查看结果
+ls bins/
+```
+
+## 常见问题
+
+### Q: desktop文件Icon路径错误？
+
+A: 使用 `linglong-fix` skill 自动修复，或手动修改desktop文件：
+```
+Icon=/usr/share/icons/app.png  →  Icon=app
+```
+
+### Q: 构建失败提示缺少依赖？
+
+A: 在 `linglong.yaml` 的 `buildext.apt.depends` 中添加缺失依赖。
+
+### Q: 兼容性检测超时？
+
+A: 超时(exit code 124)视为成功，表示应用正常启动并持续运行。
+
+### Q: 多架构如何处理？
+
+A: 在CSV中为同一包名指定多行，每行一个架构。
+
+## 注意事项
+
+1. **工程目录命名**: 必须遵循 `CI_ll_<package_id>` 格式
+2. **CSV配置优先**: CSV值优先于自动检测值
+3. **资源确认**: 资源收集后会暂停等待确认
+4. **失败处理**: 遇到失败会暂停询问用户选择
+5. **日志保存**: 所有测试日志保存在 `reports/` 目录
+
+## 相关文档
+
+- [deb_to_linglong 工具说明](../docs/deb_to_linglong.README.md)
+- [common-data-verify 工具说明](../docs/common-data-verify.README.md)
+- [validate_linglong_yaml 工具说明](../docs/validate_linglong_yaml.README.md)
