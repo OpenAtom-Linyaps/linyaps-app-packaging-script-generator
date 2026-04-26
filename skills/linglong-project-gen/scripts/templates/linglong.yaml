@@ -1,0 +1,38 @@
+# SPDX-FileCopyrightText: 2023 UnionTech Software Technology Co., Ltd.
+#
+# SPDX-License-Identifier: LGPL-3.0-or-later
+
+version: "${ll_version}"
+
+package:
+  id: com.visualstudio.code
+  name: "Visual Studio Code"
+  version: ${ll_version}
+  kind: app
+  architecture: ${linyaps_arch}
+  description: |
+    Code Editing. Redefined.
+
+base: ${base_id}/${base_version}
+runtime: ${runtime_id}/${runtime_version}
+
+buildext:
+  apt:
+    depends: # 运行时依赖，会包含在最终的应用或运行时中
+      - git
+      - clang-format
+      - libsecret-1-0
+      - shfmt
+      - golang-go
+      - gopls
+      - zsh
+
+command:
+  - "${command}"
+
+build: |
+  ##Extract res
+  mkdir -p ${prefix}/bin/ ${prefix}/share/
+  # 注意：binary 目录由 pak_linyaps.sh 在构建前准备好，包含已处理相对路径的二进制文件
+  cp -rf /project/binary/* ${prefix}/bin/
+  cp -rf /project/files_res/* ${prefix}/
