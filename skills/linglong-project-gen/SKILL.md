@@ -101,9 +101,9 @@ init_global_data() {
   linyaps_arch=""
   src_path=""
   output_dir=""
+  build_tmp_dir=""
 
   project_root="$(dirname "$(readlink -f "$0")")"
-  build_tmp_dir=$(mktemp -d)
   default_output_dir="${project_root}/bins"
 
   # 解析命令行参数
@@ -117,8 +117,24 @@ init_global_data() {
           --ll_version) ll_version="$val" ;;
           --src_path) src_path="$val" ;;
           --output_dir) output_dir="$val" ;;
+          --build_tmp_dir) build_tmp_dir="$val" ;;
       esac
   done
+  
+  # 初始化构建缓存目录
+  if [ -z "${build_tmp_dir}" ]; then
+    # 未指定时使用临时目录
+    build_tmp_dir=$(mktemp -d)
+  else
+    # 用户指定了目录，转换为绝对路径并创建（如不存在）
+    build_tmp_dir=$(readlink -f "${build_tmp_dir}")
+    if [ ! -d "${build_tmp_dir}" ]; then
+      mkdir -p "${build_tmp_dir}" || {
+        echo "错误: 无法创建构建缓存目录: ${build_tmp_dir}" >&2
+        exit 1
+      }
+    fi
+  fi
 
   # 架构映射
   case "${linyaps_arch}" in
@@ -261,6 +277,17 @@ with open('config/packages.csv', 'r') as f:
 | `${command}` | desktop Exec | 启动命令（相对路径，如 `code`） |
 | `${depends}` | deb Depends | 运行时依赖 |
 
+## 命令行参数说明
+
+| 参数 | 必填 | 说明 |
+|-----|------|------|
+| `--src_path` | 是 | deb包完整路径 |
+| `--output_dir` | 是 | 输出目录 |
+| `--ll_version` | 二选一 | 玲珑格式版本 (x.x.x.x) |
+| `--origin_version` | 二选一 | 原始版本号（自动转换为玲珑格式） |
+| `--linyaps_arch` | 否 | 目标架构 (x86_64/arm64)，默认当前系统架构 |
+| `--build_tmp_dir` | 否 | 构建缓存目录，未指定时使用临时目录 |
+
 **注意：**
 - `${command}` 应为相对路径的二进制名称（如 `code`），而非绝对路径
 - 二进制文件由 `pak_linyaps.sh` 在构建时处理软链到 `${prefix}/bin/`
@@ -335,3 +362,5 @@ build_pak() {
 6. **deb文件路径由用户执行时指定，不存储在工程目录内**
 7. **二进制命令使用相对路径，由 `pak_linyaps.sh` 处理软链**
 8. 解压后可能目录命名方式不符合Linux规范，存在空格等需要额外转译的类型，需要在pak_linux设定修改为不需要转译的路径格式
+9. **构建缓存目录可通过 `--build_tmp_dir` 参数指定，未指定时使用系统临时目录**
+10. **自定义构建缓存目录时，目录不存在会自动创建；清理行为由 `auto_clean` 参数控制**
