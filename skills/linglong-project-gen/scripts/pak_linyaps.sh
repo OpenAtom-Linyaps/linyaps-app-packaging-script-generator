@@ -240,23 +240,28 @@ build_pak() {
   
   # 处理非标准路径（/opt、/var 等）
   # 将其内容直接放到 binary/ 根目录下
+  # 使用 find + IFS= read -r 组合正确处理特殊字符路径（空格、括号、中文等）
+  # 注意：此操作必须在所有软链动作之前完成，否则软链关系将被破坏
   for non_std_dir in opt var srv; do
     if [ -d "${binary_tmp_dir}/${non_std_dir}" ]; then
-      # 遍历该目录下的子目录，直接复制到 binary/ 根目录
-      for subdir in "${binary_tmp_dir}/${non_std_dir}"/*; do
+      # 使用 find 命令遍历目录，避免 shell glob 的问题
+      find "${binary_tmp_dir}/${non_std_dir}" -mindepth 1 -maxdepth 1 -type d | while IFS= read -r subdir; do
         if [ -d "${subdir}" ]; then
           subdir_name=$(basename "${subdir}")
-          rsync -avrP "${subdir}/" "${binary_dir}/${subdir_name}/"
+          mkdir -p "${binary_dir}/${subdir_name}"
+          cp -r "${subdir}/." "${binary_dir}/${subdir_name}/"
         fi
       done
     fi
   done
   
   # 创建 bin/ 目录用于存放可执行文件软链
+  # 注意：此操作必须在特殊路径处理完成之后进行
   mkdir -p "${binary_dir}/bin"
   
   # 处理二进制文件软链
   # 在 files/bin/ 创建软链，指向实际二进制文件
+  # 注意：此操作必须在所有文件复制和路径处理完成之后进行
   if [ -n "${binary_name}" ]; then
     # 在 binary/ 目录下查找二进制文件
     actual_binary=$(find "${binary_dir}" -type f -name "${binary_name}" -executable 2>/dev/null | head -n 1)
