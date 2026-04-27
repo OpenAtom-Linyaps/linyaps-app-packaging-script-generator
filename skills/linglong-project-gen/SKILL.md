@@ -446,7 +446,62 @@ build_pak() {
 5. base/runtime 从CSV配置读取，支持不同架构使用不同版本
 6. **deb文件路径由用户执行时指定，不存储在工程目录内**
 7. **二进制命令使用相对路径，由 `pak_linyaps.sh` 处理软链**
-8. 解压后可能目录命名方式不符合Linux规范，存在空格等需要额外转译的类型，需要在pak_linux设定修改为不需要转译的路径格式
+8. **特殊格式路径处理**：
+   - 解压后可能目录命名方式不符合Linux规范，存在空格等需要额外转译的类型
+   - `pak_linyaps.sh` 已使用 `find` + `IFS= read -r` 组合正确处理特殊字符路径
+   - 支持的特殊字符包括：空格、括号、&、@、#、$、中文字符等
+   - 可使用 `scripts/test_special_paths.sh` 验证特殊路径处理逻辑
 9. **构建缓存目录可通过 `--build_tmp_dir` 参数指定，未指定时使用系统临时目录**
 10. **自定义构建缓存目录时，目录不存在会自动创建；清理行为由 `auto_clean` 参数控制**
 11. **files/ 映射到 /usr/**：`files/bin/` → `/usr/bin/`，非标准路径（如 `/opt/`）的内容直接放到 `files/` 根目录下
+
+## 特殊格式路径处理
+
+### 问题背景
+
+deb 包解压后可能包含不符合 Linux 命名规范的路径，例如：
+- 包含空格的目录名：`/opt/My App/`
+- 包含特殊字符的目录名：`/opt/App (x86_64)/`
+- 包含中文字符的目录名：`/opt/我的应用/`
+
+### 解决方案
+
+`pak_linyaps.sh` 使用以下技术正确处理特殊字符路径：
+
+```bash
+# 使用 find 命令遍历目录，避免 shell glob 的问题
+find "${binary_tmp_dir}/${non_std_dir}" -mindepth 1 -maxdepth 1 -type d | while IFS= read -r subdir; do
+    if [ -d "${subdir}" ]; then
+        subdir_name=$(basename "${subdir}")
+        mkdir -p "${binary_dir}/${subdir_name}"
+        cp -r "${subdir}/." "${binary_dir}/${subdir_name}/"
+    fi
+done
+```
+
+**关键技术点：**
+1. 使用 `find` 命令而非 `for subdir in */` 遍历目录
+2. 使用 `IFS= read -r` 防止 shell 对特殊字符进行解释
+3. 所有路径变量使用双引号保护
+4. 使用 `basename` 提取文件名，避免路径解析问题
+
+### 验证测试
+
+使用 `scripts/test_special_paths.sh` 验证特殊路径处理逻辑：
+
+```bash
+# 运行测试
+./scripts/test_special_paths.sh
+
+# 保留测试目录用于调试
+./scripts/test_special_paths.sh /tmp/test --keep
+```
+
+测试覆盖以下场景：
+- 空格字符（单空格、多空格）
+- 特殊符号（括号、&、@、#、$）
+- Unicode 字符（中文）
+- 文件名和目录名中的特殊字符
+- 软链创建的正确性
+
+详细说明请参考 `scripts/README_test_special_paths.md`。
