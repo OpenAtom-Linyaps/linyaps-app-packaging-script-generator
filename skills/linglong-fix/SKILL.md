@@ -20,6 +20,103 @@ argument-hint: '工程目录和验证报告'
 
 ## 修复项清单
 
+### 0. package_id 验证与修复
+
+#### 0.1 验证 package_id
+
+使用 `scripts/validate_package_id.sh` 验证 package_id 格式和一致性：
+
+```bash
+# 验证工程目录
+./scripts/validate_package_id.sh CI_ll_com.visualstudio.code
+
+# 验证工程目录和 deb 文件路径
+./scripts/validate_package_id.sh CI_ll_com.visualstudio.code --deb-path com.visualstudio.code/code_1.85.0_amd64.deb
+
+# 详细输出
+./scripts/validate_package_id.sh CI_ll_com.visualstudio.code --verbose
+```
+
+**验证项：**
+- 工程目录命名格式：`CI_ll_<package_id>`
+- package_id 格式：反向域名格式（如 `com.example.app`）
+- linglong.yaml 中的 `package.id` 与目录名一致性
+- deb 文件存储路径：`<package_id>/xxx.deb`
+
+**输出示例：**
+```json
+{
+  "status": "passed",
+  "package_id": "com.visualstudio.code",
+  "project_dir": "CI_ll_com.visualstudio.code",
+  "errors": [],
+  "warnings": []
+}
+```
+
+#### 0.2 修复 package_id
+
+使用 `scripts/fix_package_id.sh` 修复 package_id 相关问题：
+
+```bash
+# 模拟执行（查看将要进行的修改）
+./scripts/fix_package_id.sh CI_ll_com.visualstudio.code --dry-run
+
+# 修复 linglong.yaml 中的 package.id
+./scripts/fix_package_id.sh CI_ll_com.visualstudio.code --new-id com.visualstudio.code
+
+# 修复并重命名工程目录
+./scripts/fix_package_id.sh CI_ll_wrong.name --new-id com.visualstudio.code --rename-dir
+
+# 详细输出
+./scripts/fix_package_id.sh CI_ll_com.visualstudio.code --verbose
+```
+
+**修复项：**
+- 更新 linglong.yaml 中的 `package.id`
+- 更新 desktop 文件中的相关引用
+- 重命名工程目录（需启用 `--rename-dir`）
+
+**输出示例：**
+```
+========================================
+玲珑包ID修复工具
+========================================
+工程目录: /path/to/CI_ll_com.visualstudio.code
+
+目标 package_id: com.visualstudio.code
+
+[成功] 已更新 linglong.yaml 中的 package.id 为: com.visualstudio.code
+[成功] 已检查 desktop 文件: com.visualstudio.code.desktop
+
+========================================
+修复报告
+========================================
+状态: success
+工程目录: /path/to/CI_ll_com.visualstudio.code
+
+已应用的修复:
+  ✓ yaml_package_id: com.visualstudio.code
+  ✓ desktop_file: com.visualstudio.code.desktop
+
+========================================
+```
+
+#### 0.3 package_id 格式规范
+
+玲珑包ID必须符合以下规范：
+- **格式**：反向域名格式（如 `com.example.app`）
+- **字符**：小写字母、数字、下划线、点
+- **结构**：至少包含两个点分隔的部分
+- **长度**：最大255字符
+- **示例**：
+  - ✅ `com.visualstudio.code`
+  - ✅ `org.deepin.music`
+  - ✅ `cn.wps.wps-office`
+  - ❌ `VisualStudio.Code`（包含大写）
+  - ❌ `code`（缺少域名前缀）
+  - ❌ `com..example`（连续的点）
+
 ### 1. linglong.yaml 修复
 
 #### 1.1 缩进修复

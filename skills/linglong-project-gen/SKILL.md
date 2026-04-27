@@ -35,6 +35,28 @@ chmod +x "${project_dir}/scripts/handle_special_paths.sh"
 # 注意：不创建 src/ 目录，deb文件路径由用户执行脚本时指定
 ```
 
+**重要：验证 package_id**
+
+在创建工程目录后，应验证 package_id 格式和一致性：
+
+```bash
+# 验证工程目录命名和 package_id 格式
+"${skill_root}/../linglong-fix/scripts/validate_package_id.sh" "${project_dir}"
+
+# 如果验证失败，使用修复脚本
+"${skill_root}/../linglong-fix/scripts/fix_package_id.sh" "${project_dir}" --new-id "${package_id}"
+```
+
+**package_id 格式规范：**
+- 格式：反向域名格式（如 `com.example.app`）
+- 字符：小写字母、数字、下划线、点
+- 结构：至少两个点分隔的部分
+- 长度：最大255字符
+
+**deb 文件存储路径：**
+- 正确格式：`<package_id>/xxx.deb`
+- 示例：`com.visualstudio.code/code_1.85.0_amd64.deb`
+
 ### 2. 生成 linglong.yaml
 
 基于 `scripts/templates/` 目录下的模板生成，使用变量替换：
