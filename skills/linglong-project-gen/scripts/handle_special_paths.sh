@@ -169,78 +169,96 @@ record_path_mapping() {
 	fi
 }
 
-# 处理 /usr/ 下的标准目录
+# 处理 /usr/ 目录 - 动态遍历，排除 applications 和 icons
 process_usr_paths() {
 	log_info "处理 /usr/ 目录..."
 
 	if [ -d "${SRC_DIR}/usr" ]; then
-		# 使用 rsync 复制，排除 share 和 lib 目录
-		if command -v rsync &>/dev/null; then
-			rsync -a "${SRC_DIR}/usr/" "${DEST_DIR}/" --exclude='share' --exclude='lib' 2>/dev/null || true
-			log_info "使用 rsync 复制 /usr/ 内容"
-		else
-			# 如果没有 rsync，使用 cp
-			if [ -d "${SRC_DIR}/usr/bin" ]; then
-				mkdir -p "${DEST_DIR}/bin"
-				cp -r "${SRC_DIR}/usr/bin/"* "${DEST_DIR}/bin/" 2>/dev/null || true
+		# 动态遍历 /usr/ 下的所有子目录
+		for subdir in "${SRC_DIR}/usr/"*; do
+			if [ -d "${subdir}" ]; then
+				subdir_name=$(basename "${subdir}")
+
+				# 排除 applications 和 icons（由其他脚本处理）
+				case "${subdir_name}" in
+				applications | icons)
+					log_info "  跳过: /usr/${subdir_name} (由其他脚本处理)"
+					;;
+				*)
+					log_info "  处理: /usr/${subdir_name}"
+					mkdir -p "${DEST_DIR}/${subdir_name}"
+					cp -r "${subdir}/." "${DEST_DIR}/${subdir_name}/" 2>/dev/null || true
+					;;
+				esac
 			fi
-			if [ -d "${SRC_DIR}/usr/sbin" ]; then
-				mkdir -p "${DEST_DIR}/sbin"
-				cp -r "${SRC_DIR}/usr/sbin/"* "${DEST_DIR}/sbin/" 2>/dev/null || true
-			fi
-			if [ -d "${SRC_DIR}/usr/libexec" ]; then
-				mkdir -p "${DEST_DIR}/libexec"
-				cp -r "${SRC_DIR}/usr/libexec/"* "${DEST_DIR}/libexec/" 2>/dev/null || true
-			fi
-			log_info "使用 cp 复制 /usr/ 内容"
-		fi
+		done
 	else
 		log_info "未找到 /usr/ 目录，跳过"
 	fi
 }
 
-# 处理非标准路径（/opt、/var、/srv 等）
+# 处理非标准路径（/opt、/var、/srv 等）- 动态遍历
 process_non_standard_paths() {
 	log_info "处理非标准路径..."
 
-	for non_std_dir in opt var srv; do
-		if [ -d "${SRC_DIR}/${non_std_dir}" ]; then
-			log_info "处理 /${non_std_dir}/ 目录..."
+	# 动态遍历 SRC_DIR 下的所有顶层目录
+	for top_dir in "${SRC_DIR}"/*; do
+		if [ -d "${top_dir}" ]; then
+			dir_name=$(basename "${top_dir}")
 
-			# 使用进程替换避免子 shell 问题
-			# find + IFS= read -r 组合可以正确处理空格、括号、中文等特殊字符
-			while IFS= read -r subdir; do
-				if [ -d "${subdir}" ]; then
-					original_name=$(basename "${subdir}")
+			# 跳过 usr 目录（由 process_usr_paths 处理）
+			case "${dir_name}" in
+			usr)
+				continue
+				;;
+			opt | var | srv)
+				log_info "处理 /${dir_name}/ 目录..."
+				process_non_usr_subdirs "${top_dir}"
+				;;
+			*)
+				# 其他目录也进行处理（如 etc, lib 等）
+				log_info "处理 /${dir_name}/ 目录..."
+				process_non_usr_subdirs "${top_dir}"
+				;;
+			esac
+		fi
+	done
+}
 
-					# 检查是否包含特殊字符并记录日志
-					if [[ "${original_name}" =~ [[:space:]] ]]; then
-						log_warning "检测到空格字符: ${original_name}"
-					fi
-					if [[ "${original_name}" =~ [\(\)\&\@\#\$] ]]; then
-						log_warning "检测到特殊字符: ${original_name}"
-					fi
+# 处理非 /usr/ 目录的子目录
+process_non_usr_subdirs() {
+	local parent_dir="$1"
 
-					log_info "  处理子目录: ${original_name}"
+	for subdir in "${parent_dir}"/*; do
+		if [ -d "${subdir}" ]; then
+			original_name=$(basename "${subdir}")
 
-					# 标准化目录名
-					normalized_name=$(normalize_dirname "${original_name}")
+			# 检查是否包含特殊字符并记录日志
+			if [[ "${original_name}" =~ [[:space:]] ]]; then
+				log_warning "检测到空格字符: ${original_name}"
+			fi
+			if [[ "${original_name}" =~ [\(\)\&\@\#\$] ]]; then
+				log_warning "检测到特殊字符: ${original_name}"
+			fi
 
-					# 记录路径映射
-					record_path_mapping "${original_name}" "${normalized_name}"
+			log_info "  处理子目录: ${original_name}"
 
-					# 检查目标目录是否已存在（路径冲突检测）
-					if [ -d "${DEST_DIR}/${normalized_name}" ]; then
-						log_warning "目标目录已存在，将合并内容: ${normalized_name}"
-					fi
+			# 标准化目录名
+			normalized_name=$(normalize_dirname "${original_name}")
 
-					# 使用标准化后的目录名创建目标目录
-					mkdir -p "${DEST_DIR}/${normalized_name}"
-					cp -r "${subdir}/." "${DEST_DIR}/${normalized_name}/" 2>/dev/null || true
+			# 记录路径映射
+			record_path_mapping "${original_name}" "${normalized_name}"
 
-					log_info "  复制完成: ${original_name} -> ${normalized_name}"
-				fi
-			done < <(find "${SRC_DIR}/${non_std_dir}" -mindepth 1 -maxdepth 1 -type d 2>/dev/null)
+			# 检查目标目录是否已存在（路径冲突检测）
+			if [ -d "${DEST_DIR}/${normalized_name}" ]; then
+				log_warning "目标目录已存在，将合并内容: ${normalized_name}"
+			fi
+
+			# 使用标准化后的目录名创建目标目录
+			mkdir -p "${DEST_DIR}/${normalized_name}"
+			cp -r "${subdir}/." "${DEST_DIR}/${normalized_name}/" 2>/dev/null || true
+
+			log_info "  复制完成: ${original_name} -> ${normalized_name}"
 		fi
 	done
 }
