@@ -24,9 +24,9 @@ init_global_data() {
   linyaps_arch=""
   src_path=""
   output_dir=""
+  build_tmp_dir=""
 
   project_root="$(dirname "$(readlink -f "$0")")"
-  build_tmp_dir=$(mktemp -d)
   default_output_dir="${project_root}/bins"
 
   COMMANDLINE="$@"
@@ -50,9 +50,27 @@ init_global_data() {
           ;;          
           --output_dir)
               output_dir="$val"
+          ;;
+          --build_tmp_dir)
+              build_tmp_dir="$val"
           ;;              
       esac
   done
+  
+  # 初始化構建緩存目錄
+  if [ -z "${build_tmp_dir}" ]; then
+    # 未指定時使用臨時目錄
+    build_tmp_dir=$(mktemp -d)
+  else
+    # 用戶指定了目錄，轉換為絕對路徑並創建（如不存在）
+    build_tmp_dir=$(readlink -f "${build_tmp_dir}")
+    if [ ! -d "${build_tmp_dir}" ]; then
+      mkdir -p "${build_tmp_dir}" || {
+        echo "錯誤: 無法創建構建緩存目錄: ${build_tmp_dir}" >&2
+        exit 1
+      }
+    fi
+  fi
   
   case "${linyaps_arch}" in
     "x86_64")
