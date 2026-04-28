@@ -10,19 +10,19 @@ deb_to_linglong.py - 解析 deb 文件并生成 linglong.yaml
 
 使用示例：
   # 基本用法：解析 deb 并生成 YAML
-  python3 deb_to_linglong.py package.deb --base org.deepin.base/23.1.0
+  python3 deb_to_linglong.py package.deb --base org.deepin.base/25.2.2
 
   # 指定 runtime
-  python3 deb_to_linglong.py package.deb --base org.deepin.base/23.1.0 --runtime org.deepin.runtime.dtk/23.1.0
+  python3 deb_to_linglong.py package.deb --base org.deepin.base/25.2.2 --runtime org.deepin.runtime.dtk/25.2.2
 
   # 同时解压 deb 文件
-  python3 deb_to_linglong.py package.deb --base org.deepin.base/23.1.0 --extract-dir /tmp/extracted
+  python3 deb_to_linglong.py package.deb --base org.deepin.base/25.2.2 --extract-dir /tmp/extracted
 
   # 使用自定义架构映射
-  python3 deb_to_linglong.py package.deb --base org.deepin.base/23.1.0 --arch-map amd64=x86_64,arm64=aarch64
+  python3 deb_to_linglong.py package.deb --base org.deepin.base/25.2.2 --arch-map amd64=x86_64,arm64=aarch64
 
   # 使用外部模板
-  python3 deb_to_linglong.py package.deb --base org.deepin.base/23.1.0 --template custom.yaml
+  python3 deb_to_linglong.py package.deb --base org.deepin.base/25.2.2 --template custom.yaml
 """
 
 import argparse
@@ -397,9 +397,9 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 使用示例:
-  %(prog)s package.deb --base org.deepin.base/23.1.0
-  %(prog)s package.deb --base org.deepin.base/23.1.0 --runtime org.deepin.runtime.dtk/23.1.0
-  %(prog)s package.deb --base org.deepin.base/23.1.0 --extract-dir /tmp/extracted
+  %(prog)s package.deb --base org.deepin.base/25.2.2
+  %(prog)s package.deb --base org.deepin.base/25.2.2 --runtime org.deepin.runtime.dtk/25.2.2
+  %(prog)s package.deb --base org.deepin.base/25.2.2 --extract-dir /tmp/extracted
         """,
     )
 
