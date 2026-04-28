@@ -45,3 +45,5 @@ build: |
   
   # 复制桌面文件、图标等资源
   cp -rf /project/files_res/* ${prefix}/
+  # Add an identity for LLM
+  touch ${prefix}/.linyaps_genius
