@@ -52,10 +52,10 @@ create_test_structure() {
 	touch "${test_dir}/opt/TestApp/my binary"
 	chmod +x "${test_dir}/opt/TestApp/my binary"
 
-	# 测试用例 3: 包含特殊字符的目录名（括号、连字符等）
-	mkdir -p "${test_dir}/opt/App (x86_64)"
-	touch "${test_dir}/opt/App (x86_64)/app"
-	chmod +x "${test_dir}/opt/App (x86_64)/app"
+	# 测试用例 3: 包含逗号的目录名
+	mkdir -p "${test_dir}/opt/App,v1.0"
+	touch "${test_dir}/opt/App,v1.0/app"
+	chmod +x "${test_dir}/opt/App,v1.0/app"
 
 	# 测试用例 4: 包含中文的目录名
 	mkdir -p "${test_dir}/opt/我的应用"
@@ -67,30 +67,30 @@ create_test_structure() {
 	touch "${test_dir}/opt/App  With  Spaces/binary"
 	chmod +x "${test_dir}/opt/App  With  Spaces/binary"
 
-	# 测试用例 6: 标准路径 /usr/ 下的特殊字符
+	# 测试用例 6: 包含连字符开头的目录名
+	mkdir -p "${test_dir}/opt/-hidden-app"
+	touch "${test_dir}/opt/-hidden-app/app"
+	chmod +x "${test_dir}/opt/-hidden-app/app"
+
+	# 测试用例 7: 标准路径 /usr/ 下的空格目录
 	mkdir -p "${test_dir}/usr/bin"
 	mkdir -p "${test_dir}/usr/share/My App"
 	touch "${test_dir}/usr/share/My App/resource.txt"
 
-	# 测试用例 7: 包含 & 符号
-	mkdir -p "${test_dir}/opt/App&Co"
-	touch "${test_dir}/opt/App&Co/app"
-	chmod +x "${test_dir}/opt/App&Co/app"
+	# 测试用例 8: 包含逗号和空格混合
+	mkdir -p "${test_dir}/opt/App, v2.0"
+	touch "${test_dir}/opt/App, v2.0/binary"
+	chmod +x "${test_dir}/opt/App, v2.0/binary"
 
-	# 测试用例 8: 包含 @ 符号
-	mkdir -p "${test_dir}/opt/app@latest"
-	touch "${test_dir}/opt/app@latest/binary"
-	chmod +x "${test_dir}/opt/app@latest/binary"
+	# 测试用例 9: 包含中文和空格混合
+	mkdir -p "${test_dir}/opt/我的 应用"
+	touch "${test_dir}/opt/我的 应用/binary"
+	chmod +x "${test_dir}/opt/我的 应用/binary"
 
-	# 测试用例 9: 包含 # 符号
-	mkdir -p "${test_dir}/opt/app-v1.0#stable"
-	touch "${test_dir}/opt/app-v1.0#stable/binary"
-	chmod +x "${test_dir}/opt/app-v1.0#stable/binary"
-
-	# 测试用例 10: 包含 $ 符号（需要转义）
-	mkdir -p "${test_dir}/opt/app\$special"
-	touch "${test_dir}/opt/app\$special/binary"
-	chmod +x "${test_dir}/opt/app\$special/binary"
+	# 测试用例 10: 包含连字符的目录名（中间位置）
+	mkdir -p "${test_dir}/opt/App-v1.0"
+	touch "${test_dir}/opt/App-v1.0/app"
+	chmod +x "${test_dir}/opt/App-v1.0/app"
 
 	log_info "测试目录结构创建完成"
 }
@@ -149,20 +149,20 @@ verify_results() {
 		log_error "可执行文件 'myapp' 权限错误或文件不存在"
 	fi
 
-	# 测试 3: 验证括号目录是否被标准化
+	# 测试 3: 验证逗号目录是否被标准化
 	((TOTAL_TESTS++))
-	if [ -d "${dest_dir}/App_x86_64" ]; then
-		log_success "括号目录 'App (x86_64)' 已标准化为 'App_x86_64'"
+	if [ -d "${dest_dir}/App_v1.0" ]; then
+		log_success "逗号目录 'App,v1.0' 已标准化为 'App_v1.0'"
 	else
-		log_error "括号目录 'App (x86_64)' 标准化失败"
+		log_error "逗号目录 'App,v1.0' 标准化失败"
 	fi
 
-	# 测试 4: 验证中文目录（中文不标准化）
+	# 测试 4: 验证中文目录（中文使用哈希值）
 	((TOTAL_TESTS++))
-	if [ -d "${dest_dir}/我的应用" ]; then
-		log_success "中文目录 '我的应用' 处理正确"
+	if [ -d "${dest_dir}/0ecb7b61" ]; then
+		log_success "中文目录 '我的应用' 已标准化为哈希值 '0ecb7b61'"
 	else
-		log_error "中文目录 '我的应用' 处理失败"
+		log_error "中文目录 '我的应用' 标准化失败"
 	fi
 
 	# 测试 5: 验证多个空格是否被标准化
@@ -173,44 +173,36 @@ verify_results() {
 		log_error "多空格目录 'App  With  Spaces' 标准化失败"
 	fi
 
-	# 测试 6: 验证 & 符号是否被标准化
+	# 测试 6: 验证连字符开头的目录是否被标准化（移除前导连字符）
 	((TOTAL_TESTS++))
-	if [ -d "${dest_dir}/App_and_Co" ]; then
-		log_success "特殊字符目录 'App&Co' 已标准化为 'App_and_Co'"
+	if [ -d "${dest_dir}/hidden-app" ]; then
+		log_success "连字符开头目录 '-hidden-app' 已标准化为 'hidden-app'"
 	else
-		log_error "特殊字符目录 'App&Co' 标准化失败"
+		log_error "连字符开头目录 '-hidden-app' 标准化失败"
 	fi
 
-	# 测试 7: 验证 @ 符号是否被标准化
+	# 测试 7: 验证逗号和空格混合目录（连续下划线会被清理为一个）
 	((TOTAL_TESTS++))
-	if [ -d "${dest_dir}/app_at_latest" ]; then
-		log_success "特殊字符目录 'app@latest' 已标准化为 'app_at_latest'"
+	if [ -d "${dest_dir}/App_v2.0" ]; then
+		log_success "逗号空格混合目录 'App, v2.0' 已标准化为 'App_v2.0'"
 	else
-		log_error "特殊字符目录 'app@latest' 标准化失败"
+		log_error "逗号空格混合目录 'App, v2.0' 标准化失败"
 	fi
 
-	# 测试 8: 验证 # 符号是否被标准化
+	# 测试 8: 验证中文和空格混合目录（中文+空格都使用哈希值）
 	((TOTAL_TESTS++))
-	if [ -d "${dest_dir}/app-v1.0_hash_stable" ]; then
-		log_success "特殊字符目录 'app-v1.0#stable' 已标准化为 'app-v1.0_hash_stable'"
+	if [ -d "${dest_dir}/7b07a92d" ]; then
+		log_success "中文空格混合目录 '我的 应用' 已标准化为哈希值 '7b07a92d'"
 	else
-		log_error "特殊字符目录 'app-v1.0#stable' 标准化失败"
+		log_error "中文空格混合目录 '我的 应用' 标准化失败"
 	fi
 
-	# 测试 9: 验证 $ 符号是否被标准化
+	# 测试 10: 验证文件名中的空格（文件名也需要标准化）
 	((TOTAL_TESTS++))
-	if [ -d "${dest_dir}/app_dollar_special" ]; then
-		log_success "特殊字符目录 'app\$special' 已标准化为 'app_dollar_special'"
+	if [ -f "${dest_dir}/TestApp/my_binary" ]; then
+		log_success "空格文件名 'my binary' 已标准化为 'my_binary'"
 	else
-		log_error "特殊字符目录 'app\$special' 标准化失败"
-	fi
-
-	# 测试 10: 验证文件名中的空格（文件名不标准化，只标准化目录名）
-	((TOTAL_TESTS++))
-	if [ -f "${dest_dir}/TestApp/my binary" ]; then
-		log_success "空格文件名 'my binary' 处理正确（文件名不标准化）"
-	else
-		log_error "空格文件名 'my binary' 处理失败"
+		log_error "空格文件名 'my binary' 标准化失败"
 	fi
 
 	# 测试 11: 验证路径映射文件是否生成

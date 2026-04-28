@@ -104,7 +104,7 @@ parse_args() {
 }
 
 # 标准化目录名
-# 将空格和特殊字符替换为安全字符
+# 将空格、逗号、连字符和中文替换为安全字符
 normalize_dirname() {
 	local original_name="$1"
 	local normalized_name="${original_name}"
@@ -117,8 +117,18 @@ normalize_dirname() {
 		needs_normalization=true
 	fi
 
-	# 检查特殊字符: ( ) & @ # $ ' " 等
-	if [[ "${normalized_name}" =~ [\(\)\&\@\#\$\'\"] ]]; then
+	# 检查逗号
+	if [[ "${normalized_name}" =~ , ]]; then
+		needs_normalization=true
+	fi
+
+	# 检查连字符（目录名以 - 开头时需要处理）
+	if [[ "${normalized_name}" =~ ^- ]]; then
+		needs_normalization=true
+	fi
+
+	# 检查是否包含非ASCII字符（中文等）- 使用更可靠的方式检测
+	if [[ "${normalized_name}" == *[![:ascii:]]* ]]; then
 		needs_normalization=true
 	fi
 
@@ -127,24 +137,25 @@ normalize_dirname() {
 		# 1. 空格替换为下划线
 		normalized_name=$(echo "${normalized_name}" | sed 's/[[:space:]]/_/g')
 
-		# 2. 特殊字符替换
-		# ( ) 替换为空（去掉括号）
-		normalized_name=$(echo "${normalized_name}" | sed 's/[(\)]//g')
+		# 2. 逗号替换为下划线
+		normalized_name=$(echo "${normalized_name}" | sed 's/,/_/g')
 
-		# & 替换为 _and_
-		normalized_name=$(echo "${normalized_name}" | sed 's/&/_and_/g')
+		# 3. 连字符处理：目录名以 - 开头时替换为 _
+		if [[ "${normalized_name}" =~ ^- ]]; then
+			normalized_name="_${normalized_name:1}"
+		fi
 
-		# @ 替换为 _at_
-		normalized_name=$(echo "${normalized_name}" | sed 's/@/_at_/g')
-
-		# # 替换为 _hash_
-		normalized_name=$(echo "${normalized_name}" | sed 's/#/_hash_/g')
-
-		# $ 替换为 _dollar_
-		normalized_name=$(echo "${normalized_name}" | sed 's/\$/_dollar_/g')
-
-		# ' 和 " 替换为空
-		normalized_name=$(echo "${normalized_name}" | sed "s/['\"]//g")
+		# 4. 中文处理：替换为哈希值
+		# 检测非ASCII字符并替换为哈希值
+		if [[ "${normalized_name}" == *[![:ascii:]]* ]]; then
+			# 计算哈希值（使用MD5的前8位）
+			local hash
+			hash=$(echo -n "${normalized_name}" | md5sum | cut -c1-8)
+			# 替换所有非ASCII字符为下划线（使用更兼容的方式）
+			normalized_name=$(echo "${normalized_name}" | sed 's/[^ -~]/_/g')
+			# 在末尾添加哈希值
+			normalized_name="${normalized_name}_${hash}"
+		fi
 
 		# 清理连续下划线
 		normalized_name=$(echo "${normalized_name}" | sed 's/__*/_/g')
@@ -158,6 +169,100 @@ normalize_dirname() {
 	echo "${normalized_name}"
 }
 
+# 标准化文件名（与目录名使用相同的逻辑）
+normalize_filename() {
+	local original_name="$1"
+	local normalized_name="${original_name}"
+
+	# 检查是否需要标准化
+	local needs_normalization=false
+
+	# 检查空格
+	if [[ "${normalized_name}" =~ [[:space:]] ]]; then
+		needs_normalization=true
+	fi
+
+	# 检查逗号
+	if [[ "${normalized_name}" =~ , ]]; then
+		needs_normalization=true
+	fi
+
+	# 检查连字符（文件名以 - 开头时需要处理）
+	if [[ "${normalized_name}" =~ ^- ]]; then
+		needs_normalization=true
+	fi
+
+	# 检查是否包含非ASCII字符（中文等）
+	if [[ "${normalized_name}" == *[![:ascii:]]* ]]; then
+		needs_normalization=true
+	fi
+
+	if [ "${needs_normalization}" = "true" ]; then
+		# 执行标准化
+		# 1. 空格替换为下划线
+		normalized_name=$(echo "${normalized_name}" | sed 's/[[:space:]]/_/g')
+
+		# 2. 逗号替换为下划线
+		normalized_name=$(echo "${normalized_name}" | sed 's/,/_/g')
+
+		# 3. 连字符处理：文件名以 - 开头时替换为 _
+		if [[ "${normalized_name}" =~ ^- ]]; then
+			normalized_name="_${normalized_name:1}"
+		fi
+
+		# 4. 中文处理：替换为哈希值
+		if [[ "${normalized_name}" == *[![:ascii:]]* ]]; then
+			# 计算哈希值（使用MD5的前8位）
+			local hash
+			hash=$(echo -n "${normalized_name}" | md5sum | cut -c1-8)
+			# 替换所有非ASCII字符为下划线
+			normalized_name=$(echo "${normalized_name}" | sed 's/[^ -~]/_/g')
+			# 在末尾添加哈希值
+			normalized_name="${normalized_name}_${hash}"
+		fi
+
+		# 清理连续下划线
+		normalized_name=$(echo "${normalized_name}" | sed 's/__*/_/g')
+
+		# 清理首尾下划线
+		normalized_name=$(echo "${normalized_name}" | sed 's/^_//;s/_$//')
+
+		log_info "  文件名标准化: '${original_name}' -> '${normalized_name}'"
+	fi
+
+	echo "${normalized_name}"
+}
+
+# 递归复制目录并标准化所有文件名
+copy_with_normalized_names() {
+	local src_dir="$1"
+	local dest_dir="$2"
+
+	# 确保目标目录存在
+	mkdir -p "${dest_dir}"
+
+	# 遍历源目录中的所有项（文件和目录）
+	for item in "${src_dir}"/*; do
+		if [ -e "${item}" ]; then
+			local item_name=$(basename "${item}")
+			local normalized_name=$(normalize_filename "${item_name}")
+
+			# 记录文件名映射（如果与原名不同）
+			if [ "${item_name}" != "${normalized_name}" ]; then
+				record_path_mapping "file:${item_name}" "file:${normalized_name}"
+			fi
+
+			if [ -d "${item}" ]; then
+				# 递归处理子目录
+				copy_with_normalized_names "${item}" "${dest_dir}/${normalized_name}"
+			else
+				# 复制文件
+				cp "${item}" "${dest_dir}/${normalized_name}" 2>/dev/null || true
+			fi
+		fi
+	done
+}
+
 # 记录路径映射
 record_path_mapping() {
 	local original_name="$1"
@@ -169,7 +274,37 @@ record_path_mapping() {
 	fi
 }
 
-# 处理 /usr/ 目录 - 动态遍历，排除 applications 和 icons
+# 递归复制目录并标准化所有文件名和目录名
+copy_dir_with_normalization() {
+	local src_dir="$1"
+	local dest_dir="$2"
+
+	# 确保目标目录存在
+	mkdir -p "${dest_dir}"
+
+	# 遍历源目录中的所有项（文件和目录）
+	for item in "${src_dir}"/*; do
+		if [ -e "${item}" ]; then
+			local item_name=$(basename "${item}")
+			local normalized_name=$(normalize_filename "${item_name}")
+
+			# 记录文件名映射（如果与原名不同）
+			if [ "${item_name}" != "${normalized_name}" ]; then
+				record_path_mapping "file:${item_name}" "file:${normalized_name}"
+			fi
+
+			if [ -d "${item}" ]; then
+				# 递归处理子目录
+				copy_dir_with_normalization "${item}" "${dest_dir}/${normalized_name}"
+			else
+				# 复制文件并保留可执行权限
+				cp -p "${item}" "${dest_dir}/${normalized_name}" 2>/dev/null || cp "${item}" "${dest_dir}/${normalized_name}" 2>/dev/null || true
+			fi
+		fi
+	done
+}
+
+# 处理 /usr/ 目录 - 动态遍历，排除 applications 和 icons，使用标准化复制
 process_usr_paths() {
 	log_info "处理 /usr/ 目录..."
 
@@ -186,8 +321,16 @@ process_usr_paths() {
 					;;
 				*)
 					log_info "  处理: /usr/${subdir_name}"
-					mkdir -p "${DEST_DIR}/${subdir_name}"
-					cp -r "${subdir}/." "${DEST_DIR}/${subdir_name}/" 2>/dev/null || true
+					# 标准化目录名
+					local normalized_subdir=$(normalize_dirname "${subdir_name}")
+
+					# 记录目录映射
+					if [ "${subdir_name}" != "${normalized_subdir}" ]; then
+						record_path_mapping "dir:${subdir_name}" "dir:${normalized_subdir}"
+					fi
+
+					# 使用标准化复制函数处理目录内容
+					copy_dir_with_normalization "${subdir}" "${DEST_DIR}/${normalized_subdir}"
 					;;
 				esac
 			fi
@@ -233,12 +376,18 @@ process_non_usr_subdirs() {
 		if [ -d "${subdir}" ]; then
 			original_name=$(basename "${subdir}")
 
-			# 检查是否包含特殊字符并记录日志
+			# 检查是否包含需要处理的字符并记录日志
 			if [[ "${original_name}" =~ [[:space:]] ]]; then
 				log_warning "检测到空格字符: ${original_name}"
 			fi
-			if [[ "${original_name}" =~ [\(\)\&\@\#\$] ]]; then
-				log_warning "检测到特殊字符: ${original_name}"
+			if [[ "${original_name}" =~ , ]]; then
+				log_warning "检测到逗号字符: ${original_name}"
+			fi
+			if [[ "${original_name}" =~ ^- ]]; then
+				log_warning "检测到以连字符开头的目录名: ${original_name}"
+			fi
+			if [[ "${original_name}" == *[![:ascii:]]* ]]; then
+				log_warning "检测到非ASCII字符(中文等): ${original_name}"
 			fi
 
 			log_info "  处理子目录: ${original_name}"
@@ -246,17 +395,16 @@ process_non_usr_subdirs() {
 			# 标准化目录名
 			normalized_name=$(normalize_dirname "${original_name}")
 
-			# 记录路径映射
-			record_path_mapping "${original_name}" "${normalized_name}"
+			# 记录目录映射
+			record_path_mapping "dir:${original_name}" "dir:${normalized_name}"
 
 			# 检查目标目录是否已存在（路径冲突检测）
 			if [ -d "${DEST_DIR}/${normalized_name}" ]; then
 				log_warning "目标目录已存在，将合并内容: ${normalized_name}"
 			fi
 
-			# 使用标准化后的目录名创建目标目录
-			mkdir -p "${DEST_DIR}/${normalized_name}"
-			cp -r "${subdir}/." "${DEST_DIR}/${normalized_name}/" 2>/dev/null || true
+			# 使用标准化复制函数处理目录内容（包括文件名）
+			copy_dir_with_normalization "${subdir}" "${DEST_DIR}/${normalized_name}"
 
 			log_info "  复制完成: ${original_name} -> ${normalized_name}"
 		fi
@@ -279,9 +427,21 @@ detect_potential_issues() {
 			((issues_found++)) || true
 		fi
 
-		# 检查特殊字符
-		if [[ "${dirname}" =~ [\(\)\&\@\#\$\'\"] ]]; then
-			log_warning "目录包含特殊字符: ${dir}"
+		# 检查逗号
+		if [[ "${dirname}" =~ , ]]; then
+			log_warning "目录包含逗号: ${dir}"
+			((issues_found++)) || true
+		fi
+
+		# 检查连字符（以 - 开头）
+		if [[ "${dirname}" =~ ^- ]]; then
+			log_warning "目录以连字符开头: ${dir}"
+			((issues_found++)) || true
+		fi
+
+		# 检查非ASCII字符（中文等）
+		if [[ "${dirname}" =~ [^[:ascii:]] ]]; then
+			log_warning "目录包含非ASCII字符: ${dir}"
 			((issues_found++)) || true
 		fi
 	done < <(find "${DEST_DIR}" -type d 2>/dev/null)
@@ -295,8 +455,18 @@ detect_potential_issues() {
 			((issues_found++)) || true
 		fi
 
-		if [[ "${filename}" =~ [\(\)\&\@\#\$\'\"] ]]; then
-			log_warning "文件包含特殊字符: ${file}"
+		if [[ "${filename}" =~ , ]]; then
+			log_warning "文件包含逗号: ${file}"
+			((issues_found++)) || true
+		fi
+
+		if [[ "${filename}" =~ ^- ]]; then
+			log_warning "文件以连字符开头: ${file}"
+			((issues_found++)) || true
+		fi
+
+		if [[ "${filename}" =~ [^[:ascii:]] ]]; then
+			log_warning "文件包含非ASCII字符: ${file}"
 			((issues_found++)) || true
 		fi
 	done < <(find "${DEST_DIR}" -type f 2>/dev/null)
