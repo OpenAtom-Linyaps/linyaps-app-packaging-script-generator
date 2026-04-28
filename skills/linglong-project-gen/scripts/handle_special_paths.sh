@@ -38,6 +38,15 @@ SRC_DIR=""
 DEST_DIR=""
 PATH_MAPPING_FILE=""
 
+# 统计变量
+STAT_COPIED_FILES=0
+STAT_COPIED_DIRS=0
+STAT_NORMALIZED_FILES=0
+STAT_NORMALIZED_DIRS=0
+STAT_SKIPPED_FILES=0
+STAT_WARNINGS=0
+STAT_ERRORS=0
+
 # 日志函数
 log_info() {
 	if [ "${VERBOSE}" = "true" ]; then
@@ -104,7 +113,7 @@ parse_args() {
 }
 
 # 标准化目录名
-# 将空格、逗号、连字符和中文替换为安全字符
+# 将空格、逗号、括号、&、@、#、$ 等特殊字符和中文替换为安全字符
 normalize_dirname() {
 	local original_name="$1"
 	local normalized_name="${original_name}"
@@ -119,6 +128,16 @@ normalize_dirname() {
 
 	# 检查逗号
 	if [[ "${normalized_name}" =~ , ]]; then
+		needs_normalization=true
+	fi
+
+	# 检查括号
+	if [[ "${normalized_name}" =~ [()\[\]] ]]; then
+		needs_normalization=true
+	fi
+
+	# 检查 & # $ 等特殊符号（保留 @ 符号，因为 @ 可以作为路径名合法存在）
+	if echo "${normalized_name}" | grep -q '[&#$]'; then
 		needs_normalization=true
 	fi
 
@@ -140,12 +159,18 @@ normalize_dirname() {
 		# 2. 逗号替换为下划线
 		normalized_name=$(echo "${normalized_name}" | sed 's/,/_/g')
 
-		# 3. 连字符处理：目录名以 - 开头时替换为 _
+		# 3. 括号替换为下划线
+		normalized_name=$(echo "${normalized_name}" | sed 's/[()\[\]]/_/g')
+
+		# 4. 特殊符号 & # $ 替换为下划线（保留 @ 符号）
+		normalized_name=$(echo "${normalized_name}" | sed 's/\&/\_/g' | sed 's/[#$]/_/g')
+
+		# 5. 连字符处理：目录名以 - 开头时替换为 _
 		if [[ "${normalized_name}" =~ ^- ]]; then
 			normalized_name="_${normalized_name:1}"
 		fi
 
-		# 4. 中文处理：替换为哈希值
+		# 6. 中文处理：替换为哈希值
 		# 检测非ASCII字符并替换为哈希值
 		if [[ "${normalized_name}" == *[![:ascii:]]* ]]; then
 			# 计算哈希值（使用MD5的前8位）
@@ -187,6 +212,16 @@ normalize_filename() {
 		needs_normalization=true
 	fi
 
+	# 检查括号
+	if [[ "${normalized_name}" =~ [()\[\]] ]]; then
+		needs_normalization=true
+	fi
+
+	# 检查 & # $ 等特殊符号（保留 @ 符号，因为 @ 可以作为路径名合法存在）
+	if echo "${normalized_name}" | grep -q '[&#$]'; then
+		needs_normalization=true
+	fi
+
 	# 检查连字符（文件名以 - 开头时需要处理）
 	if [[ "${normalized_name}" =~ ^- ]]; then
 		needs_normalization=true
@@ -205,12 +240,18 @@ normalize_filename() {
 		# 2. 逗号替换为下划线
 		normalized_name=$(echo "${normalized_name}" | sed 's/,/_/g')
 
-		# 3. 连字符处理：文件名以 - 开头时替换为 _
+		# 3. 括号替换为下划线
+		normalized_name=$(echo "${normalized_name}" | sed 's/[()\[\]]/_/g')
+
+		# 4. 特殊符号 & # $ 替换为下划线（保留 @ 符号）
+		normalized_name=$(echo "${normalized_name}" | sed 's/\&/\_/g' | sed 's/[#$]/_/g')
+
+		# 5. 连字符处理：文件名以 - 开头时替换为 _
 		if [[ "${normalized_name}" =~ ^- ]]; then
 			normalized_name="_${normalized_name:1}"
 		fi
 
-		# 4. 中文处理：替换为哈希值
+		# 6. 中文处理：替换为哈希值
 		if [[ "${normalized_name}" == *[![:ascii:]]* ]]; then
 			# 计算哈希值（使用MD5的前8位）
 			local hash
@@ -264,13 +305,53 @@ copy_with_normalized_names() {
 }
 
 # 记录路径映射
+# 格式: 类型|原始名称|标准化名称|原始路径|标准化路径
 record_path_mapping() {
 	local original_name="$1"
 	local normalized_name="$2"
+	local original_path="${3:-}"
+	local normalized_path="${4:-}"
 
 	if [ "${original_name}" != "${normalized_name}" ]; then
-		echo "${original_name}|${normalized_name}" >>"${PATH_MAPPING_FILE}"
+		# 记录详细映射信息
+		if [ -n "${original_path}" ] && [ -n "${normalized_path}" ]; then
+			echo "${original_name}|${normalized_name}|${original_path}|${normalized_path}" >>"${PATH_MAPPING_FILE}"
+		else
+			echo "${original_name}|${normalized_name}" >>"${PATH_MAPPING_FILE}"
+		fi
 		log_info "  记录映射: ${original_name} -> ${normalized_name}"
+	fi
+}
+
+# 检测路径冲突
+# 检查是否存在同名文件/目录冲突
+detect_path_conflicts() {
+	log_info "检测路径冲突..."
+
+	local conflicts_found=0
+
+	# 使用关联数组检测同名冲突
+	declare -A seen_paths
+
+	# 检查目标目录中的所有路径
+	while IFS= read -r path; do
+		local path_name=$(basename "${path}")
+
+		if [ -n "${seen_paths[${path_name}]}" ]; then
+			log_warning "  路径冲突: '${path_name}' 出现多次"
+			log_warning "    - ${seen_paths[${path_name}]}"
+			log_warning "    - ${path}"
+			((conflicts_found++)) || true
+			((STAT_WARNINGS++)) || true
+		else
+			seen_paths[${path_name}]="${path}"
+		fi
+	done < <(find "${DEST_DIR}" -mindepth 1 2>/dev/null)
+
+	if [ ${conflicts_found} -eq 0 ]; then
+		log_info "  未检测到路径冲突"
+	else
+		log_warning "  检测到 ${conflicts_found} 个路径冲突"
 	fi
 }
 
@@ -291,6 +372,7 @@ copy_dir_with_normalization() {
 			# 记录文件名映射（如果与原名不同）
 			if [ "${item_name}" != "${normalized_name}" ]; then
 				record_path_mapping "file:${item_name}" "file:${normalized_name}"
+				((STAT_NORMALIZED_FILES++)) || true
 			fi
 
 			if [ -d "${item}" ]; then
@@ -298,17 +380,46 @@ copy_dir_with_normalization() {
 				copy_dir_with_normalization "${item}" "${dest_dir}/${normalized_name}"
 			else
 				# 复制文件并保留可执行权限
-				cp -p "${item}" "${dest_dir}/${normalized_name}" 2>/dev/null || cp "${item}" "${dest_dir}/${normalized_name}" 2>/dev/null || true
+				if cp -p "${item}" "${dest_dir}/${normalized_name}" 2>/dev/null; then
+					((STAT_COPIED_FILES++)) || true
+				elif cp "${item}" "${dest_dir}/${normalized_name}" 2>/dev/null; then
+					((STAT_COPIED_FILES++)) || true
+					log_warning "文件权限可能改变: ${item_name}"
+					((STAT_WARNINGS++)) || true
+				else
+					log_error "复制失败: ${item} -> ${dest_dir}/${normalized_name}"
+					((STAT_ERRORS++)) || true
+				fi
 			fi
+		else
+			# 源文件不存在（可能是断开的符号链接）
+			((STAT_SKIPPED_FILES++)) || true
 		fi
 	done
 }
 
-# 处理 /usr/ 目录 - 动态遍历，排除 applications 和 icons，使用标准化复制
+# Linyaps 规范目录列表（这些目录可以直接在 files/ 下）
+# 其他目录将作为非规范目录处理
+declare -a Linyaps_STANDARD_DIRS=("bin" "lib" "share" "sbin" "libexec" "lib64")
+
+# 检查目录是否为 linyaps 规范目录
+is_linyaps_standard_dir() {
+	local dir_name="$1"
+	for std_dir in "${Linyaps_STANDARD_DIRS[@]}"; do
+		if [ "${dir_name}" = "${std_dir}" ]; then
+			return 0
+		fi
+	done
+	return 1
+}
+
+# 处理 /usr/ 目录 - 同时支持传统 deb 结构和 linyaps flatpak-like 结构
 process_usr_paths() {
 	log_info "处理 /usr/ 目录..."
 
+	# 优先检查 /usr/ 目录（传统 deb 包结构）
 	if [ -d "${SRC_DIR}/usr" ]; then
+		log_info "检测到传统 deb 包结构 (/usr/)"
 		# 动态遍历 /usr/ 下的所有子目录
 		for subdir in "${SRC_DIR}/usr/"*; do
 			if [ -d "${subdir}" ]; then
@@ -327,20 +438,48 @@ process_usr_paths() {
 					# 记录目录映射
 					if [ "${subdir_name}" != "${normalized_subdir}" ]; then
 						record_path_mapping "dir:${subdir_name}" "dir:${normalized_subdir}"
+						((STAT_NORMALIZED_DIRS++)) || true
 					fi
 
 					# 使用标准化复制函数处理目录内容
 					copy_dir_with_normalization "${subdir}" "${DEST_DIR}/${normalized_subdir}"
+					((STAT_COPIED_DIRS++)) || true
 					;;
 				esac
 			fi
 		done
 	else
-		log_info "未找到 /usr/ 目录，跳过"
+		log_info "未找到 /usr/ 目录，检查 linyaps flatpak-like 结构..."
+		# 检查是否直接存在规范目录（linyaps flatpak-like 结构）
+		for subdir in "${SRC_DIR}"/*; do
+			if [ -d "${subdir}" ]; then
+				subdir_name=$(basename "${subdir}")
+
+				# 只处理 linyaps 规范目录
+				if is_linyaps_standard_dir "${subdir_name}"; then
+					log_info "  处理规范目录 (linyaps): ${subdir_name}/"
+					# 标准化目录名
+					local normalized_subdir=$(normalize_dirname "${subdir_name}")
+
+					# 记录目录映射
+					if [ "${subdir_name}" != "${normalized_subdir}" ]; then
+						record_path_mapping "dir:${subdir_name}" "dir:${normalized_subdir}"
+						((STAT_NORMALIZED_DIRS++)) || true
+					fi
+
+					# 使用标准化复制函数处理目录内容
+					copy_dir_with_normalization "${subdir}" "${DEST_DIR}/${normalized_subdir}"
+					((STAT_COPIED_DIRS++)) || true
+				else
+					log_info "  跳过非规范目录: ${subdir_name}/ (将按非规范目录处理)"
+				fi
+			fi
+		done
 	fi
 }
 
 # 处理非标准路径（/opt、/var、/srv 等）- 动态遍历
+# 同时处理 linyaps 非规范目录
 process_non_standard_paths() {
 	log_info "处理非标准路径..."
 
@@ -350,6 +489,13 @@ process_non_standard_paths() {
 			dir_name=$(basename "${top_dir}")
 
 			# 跳过 usr 目录（由 process_usr_paths 处理）
+			# 跳过 linyaps 规范目录（bin, lib, share, sbin, libexec, lib64）
+			# 这些目录已经在 process_usr_paths 中作为规范目录处理过了
+			if is_linyaps_standard_dir "${dir_name}"; then
+				log_info "  跳过规范目录: ${dir_name}/ (已在 process_usr_paths 中处理)"
+				continue
+			fi
+
 			case "${dir_name}" in
 			usr)
 				continue
@@ -359,7 +505,7 @@ process_non_standard_paths() {
 				process_non_usr_subdirs "${top_dir}"
 				;;
 			*)
-				# 其他目录也进行处理（如 etc, lib 等）
+				# 其他目录也进行处理（如 etc 等）
 				log_info "处理 /${dir_name}/ 目录..."
 				process_non_usr_subdirs "${top_dir}"
 				;;
@@ -379,15 +525,28 @@ process_non_usr_subdirs() {
 			# 检查是否包含需要处理的字符并记录日志
 			if [[ "${original_name}" =~ [[:space:]] ]]; then
 				log_warning "检测到空格字符: ${original_name}"
+				((STAT_WARNINGS++)) || true
 			fi
 			if [[ "${original_name}" =~ , ]]; then
 				log_warning "检测到逗号字符: ${original_name}"
+				((STAT_WARNINGS++)) || true
+			fi
+			if [[ "${original_name}" =~ [()\[\]] ]]; then
+				log_warning "检测到括号字符: ${original_name}"
+				((STAT_WARNINGS++)) || true
+			fi
+			# 检查 & @ # $ 等特殊符号（使用 grep 避免 bash 正则表达式中 & 的问题）
+			if echo "${original_name}" | grep -q '[&@#$]'; then
+				log_warning "检测到特殊符号: ${original_name}"
+				((STAT_WARNINGS++)) || true
 			fi
 			if [[ "${original_name}" =~ ^- ]]; then
 				log_warning "检测到以连字符开头的目录名: ${original_name}"
+				((STAT_WARNINGS++)) || true
 			fi
 			if [[ "${original_name}" == *[![:ascii:]]* ]]; then
 				log_warning "检测到非ASCII字符(中文等): ${original_name}"
+				((STAT_WARNINGS++)) || true
 			fi
 
 			log_info "  处理子目录: ${original_name}"
@@ -401,12 +560,14 @@ process_non_usr_subdirs() {
 			# 检查目标目录是否已存在（路径冲突检测）
 			if [ -d "${DEST_DIR}/${normalized_name}" ]; then
 				log_warning "目标目录已存在，将合并内容: ${normalized_name}"
+				((STAT_WARNINGS++)) || true
 			fi
 
 			# 使用标准化复制函数处理目录内容（包括文件名）
 			copy_dir_with_normalization "${subdir}" "${DEST_DIR}/${normalized_name}"
 
 			log_info "  复制完成: ${original_name} -> ${normalized_name}"
+			((STAT_COPIED_DIRS++)) || true
 		fi
 	done
 }
@@ -425,24 +586,28 @@ detect_potential_issues() {
 		if [[ "${dirname}" =~ [[:space:]] ]]; then
 			log_warning "目录包含空格: ${dir}"
 			((issues_found++)) || true
+			((STAT_WARNINGS++)) || true
 		fi
 
 		# 检查逗号
 		if [[ "${dirname}" =~ , ]]; then
 			log_warning "目录包含逗号: ${dir}"
 			((issues_found++)) || true
+			((STAT_WARNINGS++)) || true
 		fi
 
 		# 检查连字符（以 - 开头）
 		if [[ "${dirname}" =~ ^- ]]; then
 			log_warning "目录以连字符开头: ${dir}"
 			((issues_found++)) || true
+			((STAT_WARNINGS++)) || true
 		fi
 
 		# 检查非ASCII字符（中文等）
 		if [[ "${dirname}" =~ [^[:ascii:]] ]]; then
 			log_warning "目录包含非ASCII字符: ${dir}"
 			((issues_found++)) || true
+			((STAT_WARNINGS++)) || true
 		fi
 	done < <(find "${DEST_DIR}" -type d 2>/dev/null)
 
@@ -453,21 +618,25 @@ detect_potential_issues() {
 		if [[ "${filename}" =~ [[:space:]] ]]; then
 			log_warning "文件包含空格: ${file}"
 			((issues_found++)) || true
+			((STAT_WARNINGS++)) || true
 		fi
 
 		if [[ "${filename}" =~ , ]]; then
 			log_warning "文件包含逗号: ${file}"
 			((issues_found++)) || true
+			((STAT_WARNINGS++)) || true
 		fi
 
 		if [[ "${filename}" =~ ^- ]]; then
 			log_warning "文件以连字符开头: ${file}"
 			((issues_found++)) || true
+			((STAT_WARNINGS++)) || true
 		fi
 
 		if [[ "${filename}" =~ [^[:ascii:]] ]]; then
 			log_warning "文件包含非ASCII字符: ${file}"
 			((issues_found++)) || true
+			((STAT_WARNINGS++)) || true
 		fi
 	done < <(find "${DEST_DIR}" -type f 2>/dev/null)
 
@@ -478,12 +647,155 @@ detect_potential_issues() {
 	fi
 }
 
+# 验证 linyaps 目录结构
+# 检查 files/ 下的关键目录结构是否符合预期
+validate_linyaps_structure() {
+	log_info "验证 linyaps 目录结构..."
+
+	local validation_passed=true
+	local missing_dirs=0
+
+	# 检查关键目录是否存在（对于 linyaps 容器方案）
+	# files/ 映射到 /usr/，所以关键目录应该在 files/ 下
+	local key_dirs=("bin" "lib" "share")
+	for dir in "${key_dirs[@]}"; do
+		if [ -d "${DEST_DIR}/${dir}" ]; then
+			log_info "  ✓ 目录存在: files/${dir}/"
+		else
+			log_warning "  ✗ 目录缺失: files/${dir}/ (可选，但推荐存在)"
+			((missing_dirs++)) || true
+		fi
+	done
+
+	# 检查是否有未归类的目录（非标准 /usr 子目录）
+	local unclassified_dirs=()
+	for item in "${DEST_DIR}"/*; do
+		if [ -d "${item}" ]; then
+			local item_name=$(basename "${item}")
+			# 跳过标准目录和隐藏目录
+			case "${item_name}" in
+			bin | lib | share | etc | var | srv | opt)
+				# 这些是已知的目录类型
+				;;
+			.*)
+				# 隐藏目录（如 .path_mapping）
+				;;
+			*)
+				# 未归类的目录
+				unclassified_dirs+=("${item_name}")
+				;;
+			esac
+		fi
+	done
+
+	if [ ${#unclassified_dirs[@]} -gt 0 ]; then
+		log_info "  发现 ${#unclassified_dirs[@]} 个未归类目录（可能是 /opt、/var 等映射）:"
+		for dir in "${unclassified_dirs[@]}"; do
+			log_info "    - ${dir}/"
+		done
+	fi
+
+	# 检查软链是否正确（如果有 bin/ 目录）
+	if [ -d "${DEST_DIR}/bin" ]; then
+		local symlink_count=0
+		while IFS= read -r link; do
+			if [ -L "${link}" ]; then
+				((symlink_count++)) || true
+				# 检查软链目标是否存在
+				local target=$(readlink "${link}")
+				if [ ! -e "${DEST_DIR}/${target}" ] && [ ! -e "${DEST_DIR}/../${target}" ]; then
+					log_warning "  ✗ 软链断开: bin/${link##*/} -> ${target}"
+					((STAT_WARNINGS++)) || true
+				fi
+			fi
+		done < <(find "${DEST_DIR}/bin" -maxdepth 1 -type l 2>/dev/null)
+
+		if [ ${symlink_count} -gt 0 ]; then
+			log_info "  发现 ${symlink_count} 个软链"
+		fi
+	fi
+
+	# 返回验证结果
+	if [ ${missing_dirs} -gt 0 ]; then
+		log_warning "目录结构验证: 发现 ${missing_dirs} 个缺失目录"
+	else
+		log_success "目录结构验证: 通过"
+	fi
+}
+
+# 路径完整性检查
+# 对比源目录和目标目录的文件统计
+verify_path_integrity() {
+	log_info "路径完整性检查..."
+
+	# 统计源目录
+	local src_file_count=$(find "${SRC_DIR}" -type f 2>/dev/null | wc -l)
+	local src_dir_count=$(find "${SRC_DIR}" -type d 2>/dev/null | wc -l)
+
+	# 统计目标目录（排除 .path_mapping）
+	local dest_file_count=$(find "${DEST_DIR}" -type f ! -name ".path_mapping" 2>/dev/null | wc -l)
+	local dest_dir_count=$(find "${DEST_DIR}" -type d 2>/dev/null | wc -l)
+
+	log_info "  源目录: ${src_file_count} 个文件, ${src_dir_count} 个目录"
+	log_info "  目标目录: ${dest_file_count} 个文件, ${dest_dir_count} 个目录"
+
+	# 检查文件数量差异
+	if [ ${src_file_count} -eq ${dest_file_count} ]; then
+		log_success "  文件数量验证: 通过 (${src_file_count} == ${dest_file_count})"
+	else
+		local diff=$((src_file_count - dest_file_count))
+		if [ ${diff} -gt 0 ]; then
+			log_warning "  文件数量差异: 源目录多 ${diff} 个文件（可能是被排除的目录）"
+		else
+			log_warning "  文件数量差异: 目标目录多 $((-diff)) 个文件"
+		fi
+		((STAT_WARNINGS++)) || true
+	fi
+
+	# 检查目录数量差异
+	if [ ${src_dir_count} -le ${dest_dir_count} ]; then
+		log_success "  目录数量验证: 通过"
+	else
+		log_warning "  目录数量差异: 源目录 ${src_dir_count} 个，目标目录 ${dest_dir_count} 个"
+		((STAT_WARNINGS++)) || true
+	fi
+}
+
+# 打印统计报告
+print_statistics() {
+	log_info "========================================="
+	log_info "  处理统计报告"
+	log_info "========================================="
+	log_info "  复制文件数: ${STAT_COPIED_FILES}"
+	log_info "  复制目录数: ${STAT_COPIED_DIRS}"
+	log_info "  标准化文件数: ${STAT_NORMALIZED_FILES}"
+	log_info "  标准化目录数: ${STAT_NORMALIZED_DIRS}"
+	log_info "  跳过文件数: ${STAT_SKIPPED_FILES}"
+	log_info "  警告数: ${STAT_WARNINGS}"
+	log_info "  错误数: ${STAT_ERRORS}"
+	log_info "========================================="
+
+	# 返回统计信息
+	local total_dirs=$(find "${DEST_DIR}" -type d 2>/dev/null | wc -l)
+	local total_files=$(find "${DEST_DIR}" -type f ! -name ".path_mapping" 2>/dev/null | wc -l)
+	log_info "目标目录总计: ${total_dirs} 个目录, ${total_files} 个文件"
+
+	# 显示路径映射文件位置
+	if [ -f "${PATH_MAPPING_FILE}" ]; then
+		local mapping_count=$(grep -v "^#" "${PATH_MAPPING_FILE}" | grep -c "|" 2>/dev/null || echo "0")
+		if [ "${mapping_count}" -gt 0 ]; then
+			log_info "路径映射文件: ${PATH_MAPPING_FILE} (${mapping_count} 个映射)"
+		fi
+	fi
+}
+
 # 主函数
 main() {
 	parse_args "$@"
 
 	log_info "========================================="
 	log_info "  特殊格式路径处理脚本"
+	log_info "  (Linyaps 容器方案优化版)"
 	log_info "========================================="
 	log_info "源目录: ${SRC_DIR}"
 	log_info "目标目录: ${DEST_DIR}"
@@ -498,19 +810,26 @@ main() {
 	# 步骤 3: 检测潜在问题
 	detect_potential_issues
 
-	log_success "路径处理完成"
+	# 步骤 4: 验证 linyaps 目录结构
+	validate_linyaps_structure
 
-	# 返回统计信息
-	local total_dirs=$(find "${DEST_DIR}" -type d 2>/dev/null | wc -l)
-	local total_files=$(find "${DEST_DIR}" -type f 2>/dev/null | wc -l)
-	log_info "处理结果: ${total_dirs} 个目录, ${total_files} 个文件"
+	# 步骤 5: 路径完整性检查
+	verify_path_integrity
 
-	# 显示路径映射文件位置
-	if [ -f "${PATH_MAPPING_FILE}" ]; then
-		local mapping_count=$(grep -v "^#" "${PATH_MAPPING_FILE}" | grep -c "|" 2>/dev/null || echo "0")
-		if [ "${mapping_count}" -gt 0 ]; then
-			log_info "路径映射文件: ${PATH_MAPPING_FILE} (${mapping_count} 个映射)"
-		fi
+	# 步骤 6: 检测路径冲突
+	detect_path_conflicts
+
+	# 打印统计报告
+	print_statistics
+
+	# 最终状态
+	if [ ${STAT_ERRORS} -gt 0 ]; then
+		log_error "路径处理完成，但有 ${STAT_ERRORS} 个错误"
+		exit 1
+	elif [ ${STAT_WARNINGS} -gt 0 ]; then
+		log_warning "路径处理完成，但有 ${STAT_WARNINGS} 个警告"
+	else
+		log_success "路径处理完成，无错误"
 	fi
 }
 
