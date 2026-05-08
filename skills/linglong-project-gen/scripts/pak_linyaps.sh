@@ -286,6 +286,10 @@ build_pak() {
 	# 避免相同内容的 desktop 文件重复打包
 	"${project_root}/scripts/dedup_desktop_files.sh" "${build_tmp_dir}/files_res"
 
+	# 验证并修复嵌套 bin/ 路径问题
+	# 检测 binary/bin/bin/ 嵌套问题并自动修复
+	"${project_root}/scripts/validate_bin_nesting.sh" "${binary_dir}" --fix
+
 	## Building & Exporting
 	ll-builder build --skip-output-check
 	building_status=$?
