@@ -79,8 +79,7 @@ command:
 
 build: |
   ##Extract res
-  mkdir -p ${{prefix}}/bin/ ${{prefix}}/share/
-  cp -rf /project/binary/* ${{prefix}}/bin/
+  cp -rf /project/binary/* ${{prefix}}/
   cp -rf /project/files_res/* ${{prefix}}/
 """
 

@@ -211,7 +211,7 @@ def fix_yaml_required_fields(yaml_path: str, package_info: dict):
     
     # 确保build存在
     if 'build' not in data:
-        data['build'] = "mkdir -p ${prefix}/bin/\ncp -rf /project/binary/* ${prefix}/bin/"
+        data['build'] = "cp -rf /project/binary/* ${prefix}/"
     
     with open(yaml_path, 'w') as f:
         yaml.dump(data, f, default_flow_style=False, allow_unicode=True)

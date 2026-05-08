@@ -103,6 +103,52 @@ validate_version_format() {
 	fi
 }
 
+# 从 desktop 文件中自动提取 binary_name
+# 核心思路：从所有 .desktop 文件的 Exec= 字段中提取二进制名称，
+# 统计每个名称出现次数，返回出现次数最多的作为全局 binary_name
+extract_binary_name_from_desktop() {
+	local desktop_dir="$1"
+
+	# 如果目录不存在，返回空
+	if [ ! -d "${desktop_dir}" ]; then
+		echo ""
+		return 1
+	fi
+
+	# 临时文件存储所有提取的二进制名称
+	local names_file
+	names_file=$(mktemp)
+
+	# 遍历所有 .desktop 文件
+	while IFS= read -r file; do
+		# 提取所有 Exec= 行
+		while IFS= read -r line; do
+			# 移除 "Exec=" 前缀
+			cmd="${line#*=}"
+
+			# 移除引号包裹的参数，保留第一个参数
+			# 处理情况：
+			#   Exec="/usr/lib/foo" --args  -> /usr/lib/foo
+			#   Exec=/usr/lib/foo --args    -> /usr/lib/foo
+			#   Exec="/usr/lib/foo"         -> /usr/lib/foo
+			cmd=$(echo "$cmd" | sed 's/"[^"]*"/""/g' | awk '{print $1}')
+
+			# 获取文件名（去掉路径）
+			if [ -n "$cmd" ]; then
+				basename "$cmd" 2>/dev/null
+			fi
+		done < <(grep "^Exec=" "$file" 2>/dev/null)
+	done < <(find "${desktop_dir}" -name "*.desktop" -type f 2>/dev/null) > "$names_file"
+
+	# 统计出现次数，返回最多的
+	# sort -c 检查是否已排序，这里我们直接排序后统计
+	local result
+	result=$(sort "$names_file" | uniq -c | sort -rn | head -1 | awk '{print $2}')
+
+	rm -f "$names_file"
+	echo "$result"
+}
+
 generate_version_from_origin() {
 	local origin_ver="$1"
 
@@ -252,16 +298,30 @@ build_pak() {
 	# 处理二进制文件软链
 	# 在 files/bin/ 创建软链，指向实际二进制文件
 	# 注意：此操作必须在所有文件复制和路径处理完成之后进行
+	if [ -z "${binary_name}" ]; then
+		# 未指定 binary_name 时，自动从 desktop 文件中提取
+		echo "binary_name not specified, auto-detecting from desktop files..."
+		binary_name=$(extract_binary_name_from_desktop "${binary_dir}")
+		if [ -n "${binary_name}" ]; then
+			echo "Auto-detected binary_name: ${binary_name}"
+		else
+			echo "Warning: Could not auto-detect binary_name"
+		fi
+	fi
+
 	if [ -n "${binary_name}" ]; then
 		# 在 binary/ 目录下查找二进制文件
 		actual_binary=$(find "${binary_dir}" -type f -name "${binary_name}" -executable 2>/dev/null | head -n 1)
 
 		if [ -n "${actual_binary}" ]; then
-			# 计算相对于 files/bin/ 的路径
-			# actual_binary 示例: /path/to/binary/uTools/utools
+			# 使用 readlink -f 解析实际文件路径，处理软链情况
+			real_binary=$(readlink -f "${actual_binary}")
+
+			# 计算相对于 binary/ 的路径
+			# real_binary 示例: /path/to/binary/uTools/utools
 			# binary_dir 示例: /path/to/binary/
 			# rel_binary 示例: uTools/utools
-			rel_binary="${actual_binary#${binary_dir}}"
+			rel_binary="${real_binary#${binary_dir}}"
 
 			# 计算从 bin/ 到实际二进制的相对路径
 			# 例如：bin/ -> ../uTools/utools
