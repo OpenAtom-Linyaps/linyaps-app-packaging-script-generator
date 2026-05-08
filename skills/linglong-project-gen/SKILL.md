@@ -97,16 +97,10 @@ command:
 
 build: |
   # files/ 映射到 /usr/ 目录
-  # files/bin/ -> /usr/bin/
-  # files/share/ -> /usr/share/
-  # files/lib/ -> /usr/lib/
-  # 非 /usr 标准路径（如 /opt/uTools/）直接放到 files/ 下作为未归类目录
-  mkdir -p ${prefix}/bin/ ${prefix}/share/ ${prefix}/lib/
-  
-  # 复制应用文件到 ${prefix}/ (files/) 根目录
-  # pak_linyaps.sh 已处理路径转换：/opt/uTools/ -> files/uTools/
+  # binary/ 的内容直接对应 $prefix/ (files/)
+  # pak_linyaps.sh 已处理路径转换和软链
   cp -rf /project/binary/* ${prefix}/
-  
+
   # 复制桌面文件、图标等资源
   cp -rf /project/files_res/* ${prefix}/
 ```
