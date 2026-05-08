@@ -297,8 +297,9 @@ copy_with_normalized_names() {
 				# 递归处理子目录
 				copy_with_normalized_names "${item}" "${dest_dir}/${normalized_name}"
 			else
-				# 复制文件
-				cp "${item}" "${dest_dir}/${normalized_name}" 2>/dev/null || true
+				# 复制文件并保留软链
+				# 使用 cp -a 保留软链、权限、时间戳等所有属性
+				cp -a "${item}" "${dest_dir}/${normalized_name}" 2>/dev/null || true
 			fi
 		fi
 	done
@@ -379,13 +380,16 @@ copy_dir_with_normalization() {
 				# 递归处理子目录
 				copy_dir_with_normalization "${item}" "${dest_dir}/${normalized_name}"
 			else
-				# 复制文件并保留可执行权限
-				if cp -p "${item}" "${dest_dir}/${normalized_name}" 2>/dev/null; then
+				# 复制文件并保留所有属性（包括软链）
+				# 使用 cp -a 保留软链、权限、时间戳等所有属性
+				# -a 等同于 -dR --preserve=all，其中 -d 表示保留软链不解引用
+				if cp -a "${item}" "${dest_dir}/${normalized_name}" 2>/dev/null; then
 					((STAT_COPIED_FILES++)) || true
-				elif cp "${item}" "${dest_dir}/${normalized_name}" 2>/dev/null; then
-					((STAT_COPIED_FILES++)) || true
-					log_warning "文件权限可能改变: ${item_name}"
-					((STAT_WARNINGS++)) || true
+					# 检查是否为软链并记录日志
+					if [ -L "${item}" ]; then
+						local link_target=$(readlink "${item}")
+						log_info "  保留软链: ${item_name} -> ${link_target}"
+					fi
 				else
 					log_error "复制失败: ${item} -> ${dest_dir}/${normalized_name}"
 					((STAT_ERRORS++)) || true
@@ -647,6 +651,79 @@ detect_potential_issues() {
 	fi
 }
 
+# 修复软链相对路径
+# 在文件复制完成后，重新计算所有软链的相对路径
+fix_symlink_paths() {
+	log_info "修复软链相对路径..."
+
+	local fixed_count=0
+	local broken_count=0
+
+	# 查找所有软链
+	while IFS= read -r symlink; do
+		if [ -L "${symlink}" ]; then
+			local link_name=$(basename "${symlink}")
+			local link_dir=$(dirname "${symlink}")
+			local old_target=$(readlink "${symlink}")
+
+			# 检查软链目标是否存在（相对于软链所在目录）
+			if [ ! -e "${symlink}" ]; then
+				# 软链断开，尝试修复
+				log_warning "  发现断开的软链: ${link_name} -> ${old_target}"
+
+				# 尝试在 DEST_DIR 中查找目标文件
+				# 1. 先尝试解析绝对路径目标
+				local target_basename=$(basename "${old_target}")
+
+				# 2. 在 DEST_DIR 中查找同名文件
+				local found_target=$(find "${DEST_DIR}" -type f -name "${target_basename}" 2>/dev/null | head -n 1)
+
+				if [ -n "${found_target}" ]; then
+					# 找到目标文件，计算新的相对路径
+					local rel_target=$(realpath --relative-to="${link_dir}" "${found_target}")
+
+					# 删除旧软链
+					rm -f "${symlink}"
+
+					# 创建新软链
+					ln -sf "${rel_target}" "${symlink}"
+
+					log_success "  修复软链: ${link_name} -> ${rel_target}"
+					((fixed_count++)) || true
+				else
+					log_warning "  无法找到目标文件: ${target_basename}"
+					((broken_count++)) || true
+					((STAT_WARNINGS++)) || true
+				fi
+			else
+				# 软链正常，检查是否需要调整相对路径
+				# 获取软链目标的绝对路径
+				local abs_target=$(readlink -f "${symlink}")
+
+				# 检查目标是否在 DEST_DIR 内
+				if [[ "${abs_target}" == "${DEST_DIR}"* ]]; then
+					# 目标在 DEST_DIR 内，检查相对路径是否正确
+					local current_rel=$(readlink "${symlink}")
+					local correct_rel=$(realpath --relative-to="${link_dir}" "${abs_target}")
+
+					if [ "${current_rel}" != "${correct_rel}" ]; then
+						# 相对路径不正确，修复
+						rm -f "${symlink}"
+						ln -sf "${correct_rel}" "${symlink}"
+						log_info "  调整软链路径: ${link_name} -> ${correct_rel}"
+						((fixed_count++)) || true
+					fi
+				fi
+			fi
+		fi
+	done < <(find "${DEST_DIR}" -type l 2>/dev/null)
+
+	log_info "  修复了 ${fixed_count} 个软链"
+	if [ ${broken_count} -gt 0 ]; then
+		log_warning "  ${broken_count} 个软链无法修复（目标文件不存在）"
+	fi
+}
+
 # 验证 linyaps 目录结构
 # 检查 files/ 下的关键目录结构是否符合预期
 validate_linyaps_structure() {
@@ -807,16 +884,20 @@ main() {
 	# 步骤 2: 处理非标准路径（包含标准化）
 	process_non_standard_paths
 
-	# 步骤 3: 检测潜在问题
+	# 步骤 3: 修复软链相对路径
+	# 在文件复制完成后，重新计算所有软链的相对路径
+	fix_symlink_paths
+
+	# 步骤 4: 检测潜在问题
 	detect_potential_issues
 
-	# 步骤 4: 验证 linyaps 目录结构
+	# 步骤 5: 验证 linyaps 目录结构
 	validate_linyaps_structure
 
-	# 步骤 5: 路径完整性检查
+	# 步骤 6: 路径完整性检查
 	verify_path_integrity
 
-	# 步骤 6: 检测路径冲突
+	# 步骤 7: 检测路径冲突
 	detect_path_conflicts
 
 	# 打印统计报告
