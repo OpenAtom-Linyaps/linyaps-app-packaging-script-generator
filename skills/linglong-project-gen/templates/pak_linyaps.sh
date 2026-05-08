@@ -202,7 +202,7 @@ build_dir_init() {
 	## Generate linyaps building dir
 	mkdir -p "${build_tmp_dir}/binary"
 	cd "${build_tmp_dir}"
-	cp -rf "${project_root}/templates/files_res" \
+	cp -rf "${project_root}/files_res" \
 		"${build_tmp_dir}"
 
 	## 复制脚本到构建目录，供 linglong.yaml build 阶段使用
@@ -219,7 +219,7 @@ build_dir_init() {
 	export runtime_version=${runtime_version}
 	export linyaps_arch=${linyaps_arch}
 
-	cat "${project_root}/templates/linglong.yaml" |
+	cat "${project_root}/linglong.yaml" |
 		envsubst >"${build_tmp_dir}/linglong.yaml"
 }
 
