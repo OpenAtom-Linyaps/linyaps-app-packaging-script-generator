@@ -145,3 +145,13 @@ ll_arch = map_architecture("arm64")  # 返回 "aarch64"
 2. 多架构deb (Architecture: all) 需要根据目标架构指定
 3. 依赖解析会去除版本约束，仅保留包名
 4. 版本转换会去除epoch和后缀，补齐到4位数字
+
+## 后续步骤
+
+deb 包分析完成后，应调用 `linglong-project-gen` skill 生成玲珑打包工程：
+
+```
+参考: skills/linglong-project-gen/SKILL.md
+```
+
+**重要：** 生成 `pak_linyaps.sh` 时，务必遵循 `linglong-project-gen` skill 中的"常见错误警告"章节，避免模板路径和变量遗漏问题。

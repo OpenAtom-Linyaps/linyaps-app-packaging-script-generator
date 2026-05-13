@@ -448,6 +448,98 @@ build_pak() {
 - 软链使用相对路径（如 `../uTools/utools`），确保在玲瓏容器内正确解析
 ```
 
+## ⚠️ 常见错误警告（LLM Agent 必读）
+
+**以下错误在 LLM 自动生成 `pak_linyaps.sh` 时经常出现，必须避免：**
+
+### 1. 模板路径错误
+
+❌ **错误写法：**
+```bash
+cp -rf "${project_root}/files_res" "${build_tmp_dir}"
+cat "${project_root}/linglong.yaml" | envsubst >"${build_tmp_dir}/linglong.yaml"
+```
+
+✅ **正确写法：**
+```bash
+cp -rf "${project_root}/templates/files_res" "${build_tmp_dir}"
+cat "${project_root}/templates/linglong.yaml" | envsubst >"${build_tmp_dir}/linglong.yaml"
+```
+
+**原因：** `files_res` 和 `linglong.yaml` 位于 `templates/` 目录下，不是 `project_root` 根目录。
+
+### 2. export command 变量缺失
+
+❌ **错误写法：**
+```bash
+export linyaps_arch=${linyaps_arch}
+
+cat "${project_root}/templates/linglong.yaml" | envsubst >"${build_tmp_dir}/linglong.yaml"
+```
+
+✅ **正确写法：**
+```bash
+export linyaps_arch=${linyaps_arch}
+export command=${binary_name:-<fallback_binary_name>}  # 必须有此行！
+
+cat "${project_root}/templates/linglong.yaml" | envsubst >"${build_tmp_dir}/linglong.yaml"
+```
+
+**原因：** `linglong.yaml` 模板中使用 `${command}` 变量，缺少此 export 会导致变量替换失败。
+
+**fallback_binary_name 示例：**
+- opera 浏览器：`export command=${binary_name:-opera}`
+- vscode：`export command=${binary_name:-code}`
+- 一般应用：`export command=${binary_name:-<应用主二进制名>}`
+
+### 3. 变量定义方式错误
+
+❌ **错误写法（硬编码）：**
+```bash
+case "${linyaps_arch}" in
+"x86_64")
+  binary_arch="amd64"
+  base_id="org.deepin.base"        # 硬编码
+  base_version="25.2.2"            # 硬编码
+  runtime_id="org.deepin.runtime.dtk"
+  runtime_version="25.2.2"
+  ;;
+```
+
+✅ **正确写法（引用顶部变量）：**
+```bash
+# 在脚本顶部定义
+package_id="com.opera.browser"
+base_id="org.deepin.base"
+base_version="25.2.2"
+runtime_id="org.deepin.runtime.dtk"
+runtime_version="25.2.2"
+
+# 在 case 中引用
+case "${linyaps_arch}" in
+"x86_64")
+  binary_arch="amd64"
+  base_id="${base_id}"              # 引用顶部变量
+  base_version="${base_version}"
+  runtime_id="${runtime_id}"
+  runtime_version="${runtime_version}"
+  ;;
+```
+
+**原因：** 顶部变量定义便于维护和修改，避免多处硬编码不一致。
+
+### 4. 生成后自检清单
+
+生成 `pak_linyaps.sh` 后，必须检查以下内容：
+
+- [ ] `build_dir_init` 函数中 `files_res` 路径包含 `templates/`
+- [ ] `build_dir_init` 函数中 `linglong.yaml` 路径包含 `templates/`
+- [ ] `build_dir_init` 函数中有 `export command=${binary_name:-...}` 行
+- [ ] `base_id`、`runtime_id` 等变量在脚本顶部定义，case 中引用
+- [ ] `--binary_name` 参数在 `init_global_data` 的参数解析中存在
+
+---
+
 ## 注意事项
 
 1. 工程目录命名必须遵循 `CI_ll_<package_id>` 格式
