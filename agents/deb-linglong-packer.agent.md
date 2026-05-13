@@ -1,7 +1,8 @@
 ---
-description: "批量将Debian软件包(.deb)批量转换为玲珑(Linglong)便捷打包脚本。Use when: 需要批量处理deb包、创建玲珑打包工程、自动化deb到玲珑的转换、处理多个应用的打包适配。"
+description: >
+  批量将Debian软件包(.deb)批量转换为玲珑(Linglong)便捷打包脚本。
+  使用场景：需要批量处理deb包、创建玲珑打包工程、自动化deb到玲珑的转换、处理多个应用的打包适配。
 name: "linyaps-app-packaging-script-generator"
-argument-hint: "deb包目录或CSV配置文件路径"
 tools:
   read: true
   edit: true

@@ -1,8 +1,7 @@
 ---
 name: linglong-project-gen
-description: '生成玲珑打包工程文件(linglong.yaml、pak_linyaps.sh)。Use when: 需要创建新的玲珑打包工程、生成linglong.yaml配置、生成打包脚本。'
-argument-hint: '包ID和配置信息'
----
+description: >
+  根据deb包信息和CSV配置，生成完整的玲珑打包工程，包括 linglong.yaml 配置文件和 pak_linyaps.sh 打包脚本。
 
 # 玲珑工程生成
 

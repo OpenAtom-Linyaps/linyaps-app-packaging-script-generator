@@ -1,8 +1,8 @@
 ---
 name: resource-collector
-description: '从deb解压目录收集资源文件(desktop、icons、appdata等)并整理到files_res目录。Use when: 需要提取应用资源、整理desktop文件、收集图标文件、验证资源合规性。'
-argument-hint: 'deb解压路径和目标工程目录'
----
+description: >
+  从deb包解压后的目录中提取应用资源文件（desktop文件、图标、appdata、补全脚本等），
+  按照玲珑打包规范整理到 files_res/ 目录结构中。
 
 # 资源收集器
 
