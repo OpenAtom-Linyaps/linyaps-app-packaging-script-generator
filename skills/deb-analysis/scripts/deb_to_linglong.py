@@ -26,6 +26,9 @@ deb_to_linglong.py - 解析 deb 文件并生成 linglong.yaml
 """
 
 import argparse
+import functools
+import hashlib
+import json
 import os
 import re
 import subprocess
@@ -40,6 +43,10 @@ try:
 except ImportError:
     print("错误: 缺少 PyYAML 库，请运行: pip install pyyaml", file=sys.stderr)
     sys.exit(1)
+
+# 缓存目录
+CACHE_DIR = os.path.join(tempfile.gettempdir(), "deb_to_linglong_cache")
+os.makedirs(CACHE_DIR, exist_ok=True)
 
 
 # 默认架构映射
@@ -84,9 +91,119 @@ build: |
 """
 
 
+def get_file_hash(file_path: str) -> str:
+    """
+    计算文件的 MD5 哈希值用于缓存键
+
+    Args:
+        file_path: 文件路径
+
+    Returns:
+        MD5 哈希字符串
+    """
+    hash_md5 = hashlib.md5()
+    with open(file_path, "rb") as f:
+        for chunk in iter(lambda: f.read(4096), b""):
+            hash_md5.update(chunk)
+    return hash_md5.hexdigest()
+
+
+def cache_result(func):
+    """
+    缓存装饰器，用于缓存函数结果到文件系统
+
+    使用文件哈希作为缓存键，避免重复处理相同的 deb 文件
+    """
+
+    @functools.wraps(func)
+    def wrapper(deb_file: str, *args, **kwargs):
+        # 计算文件哈希作为缓存键
+        file_hash = get_file_hash(deb_file)
+        cache_file = os.path.join(CACHE_DIR, f"{func.__name__}_{file_hash}.json")
+
+        # 尝试从缓存读取
+        if os.path.exists(cache_file):
+            try:
+                with open(cache_file, "r", encoding="utf-8") as f:
+                    cached_data = json.load(f)
+                    print(f"✓ 从缓存读取: {func.__name__}")
+                    return cached_data
+            except (json.JSONDecodeError, IOError):
+                # 缓存损坏，继续执行函数
+                pass
+
+        # 执行函数
+        result = func(deb_file, *args, **kwargs)
+
+        # 保存到缓存
+        try:
+            with open(cache_file, "w", encoding="utf-8") as f:
+                json.dump(result, f, ensure_ascii=False, indent=2)
+        except IOError:
+            # 缓存写入失败，不影响主流程
+            pass
+
+        return result
+
+    return wrapper
+
+
+def extract_control_file_via_ar(deb_file: str) -> str:
+    """
+    使用 ar -x 提取 control 文件内容（后备方案）
+
+    Args:
+        deb_file: deb 文件路径
+
+    Returns:
+        control 文件内容
+
+    Raises:
+        ValueError: 提取失败时
+    """
+    with tempfile.TemporaryDirectory() as temp_dir:
+        # 使用 ar 解压 deb 归档
+        try:
+            subprocess.run(
+                ["ar", "-x", deb_file], cwd=temp_dir, check=True, capture_output=True
+            )
+        except subprocess.CalledProcessError as e:
+            raise ValueError(f"ar 解压失败: {e}")
+        except FileNotFoundError:
+            raise ValueError("ar 命令未找到，请确保已安装 binutils")
+
+        # 查找 control 文件
+        control_tar = None
+        for file in os.listdir(temp_dir):
+            if file.startswith("control."):
+                control_tar = os.path.join(temp_dir, file)
+                break
+
+        if not control_tar:
+            raise ValueError("无法找到 control 归档文件")
+
+        # 解压 control
+        try:
+            with tarfile.open(control_tar, "r:*") as tar:
+                tar.extractall(temp_dir)
+        except Exception as e:
+            raise ValueError(f"解压 control 归档失败: {e}")
+
+        # 读取 control 文件
+        control_file = os.path.join(temp_dir, "control")
+        if not os.path.exists(control_file):
+            raise ValueError("control 文件不存在")
+
+        with open(control_file, "r", encoding="utf-8", errors="ignore") as f:
+            return f.read()
+
+
+@cache_result
 def extract_deb_info(deb_file: str) -> Dict[str, str]:
     """
     从 deb 文件中提取元数据信息
+
+    优先使用 dpkg -I，失败时回退到 ar -x 方式
 
     Args:
         deb_file: deb 文件路径
@@ -100,16 +217,37 @@ def extract_deb_info(deb_file: str) -> Dict[str, str]:
     if not os.path.isfile(deb_file):
         raise ValueError(f"deb 文件不存在: {deb_file}")
 
-    # 使用 dpkg -I 命令提取信息
+    output = None
+    use_fallback = False
+
+    # 尝试使用 dpkg -I 命令提取信息
     try:
         result = subprocess.run(
-            ["dpkg", "-I", deb_file], capture_output=True, text=True, check=True
+            ["dpkg", "-I", deb_file],
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout=30,
         )
         output = result.stdout
+        print("✓ 使用 dpkg -I 提取信息")
     except subprocess.CalledProcessError as e:
-        raise ValueError(f"无法读取 deb 文件信息: {e}")
+        print(f"⚠ dpkg -I 失败: {e}，尝试使用后备方案", file=sys.stderr)
+        use_fallback = True
     except FileNotFoundError:
-        raise ValueError("dpkg 命令未找到，请确保已安装 dpkg")
+        print("⚠ dpkg 命令未找到，尝试使用后备方案", file=sys.stderr)
+        use_fallback = True
+    except subprocess.TimeoutExpired:
+        print("⚠ dpkg -I 超时，尝试使用后备方案", file=sys.stderr)
+        use_fallback = True
+
+    # 使用后备方案：ar -x + 手动解析 control 文件
+    if use_fallback or not output:
+        try:
+            output = extract_control_file_via_ar(deb_file)
+            print("✓ 使用 ar -x 后备方案提取信息")
+        except Exception as e:
+            raise ValueError(f"后备方案也失败: {e}")
 
     # 解析输出
     info = {}
@@ -323,6 +461,8 @@ def extract_deb_archive(deb_file: str, target_dir: str) -> Tuple[str, str]:
     """
     解压 deb 文件到指定目录
 
+    优先使用 ar -x 方式（更兼容），失败时尝试 dpkg -x
+
     Args:
         deb_file: deb 文件路径
         target_dir: 目标目录
@@ -339,17 +479,51 @@ def extract_deb_archive(deb_file: str, target_dir: str) -> Tuple[str, str]:
     # 创建目标目录
     os.makedirs(target_dir, exist_ok=True)
 
+    # 方案1: 使用 ar -x 解压（推荐，更兼容）
+    try:
+        control_dir, data_dir = _extract_via_ar(deb_file, target_dir)
+        print("✓ 使用 ar -x 解压成功")
+        return control_dir, data_dir
+    except Exception as e:
+        print(f"⚠ ar -x 解压失败: {e}，尝试使用 dpkg -x 后备方案", file=sys.stderr)
+
+    # 方案2: 使用 dpkg -x 解压（后备方案）
+    try:
+        control_dir, data_dir = _extract_via_dpkg(deb_file, target_dir)
+        print("✓ 使用 dpkg -x 后备方案解压成功")
+        return control_dir, data_dir
+    except Exception as e:
+        raise ValueError(f"所有解压方案都失败: {e}")
+
+
+def _extract_via_ar(deb_file: str, target_dir: str) -> Tuple[str, str]:
+    """
+    使用 ar -x 解压 deb 文件
+
+    Args:
+        deb_file: deb 文件路径
+        target_dir: 目标目录
+
+    Returns:
+        (control目录路径, data目录路径)
+    """
     # 创建临时目录用于解压
     with tempfile.TemporaryDirectory() as temp_dir:
         # 使用 ar 解压 deb 归档
         try:
             subprocess.run(
-                ["ar", "-x", deb_file], cwd=temp_dir, check=True, capture_output=True
+                ["ar", "-x", deb_file],
+                cwd=temp_dir,
+                check=True,
+                capture_output=True,
+                timeout=60,
             )
         except subprocess.CalledProcessError as e:
-            raise ValueError(f"解压 deb 归档失败: {e}")
+            raise ValueError(f"ar 解压失败: {e}")
         except FileNotFoundError:
             raise ValueError("ar 命令未找到，请确保已安装 binutils")
+        except subprocess.TimeoutExpired:
+            raise ValueError("ar 解压超时")
 
         # 查找 control 和 data 文件
         control_tar = None
@@ -385,6 +559,74 @@ def extract_deb_archive(deb_file: str, target_dir: str) -> Tuple[str, str]:
                 tar.extractall(data_dir)
         except Exception as e:
             raise ValueError(f"解压 data 归档失败: {e}")
+
+    return control_dir, data_dir
+
+
+def _extract_via_dpkg(deb_file: str, target_dir: str) -> Tuple[str, str]:
+    """
+    使用 dpkg -x 解压 deb 文件（后备方案）
+
+    Args:
+        deb_file: deb 文件路径
+        target_dir: 目标目录
+
+    Returns:
+        (control目录路径, data目录路径)
+    """
+    # dpkg -x 只能解压 data 部分
+    data_dir = os.path.join(target_dir, "data")
+    os.makedirs(data_dir, exist_ok=True)
+
+    try:
+        subprocess.run(
+            ["dpkg", "-x", deb_file, data_dir],
+            check=True,
+            capture_output=True,
+            timeout=120,
+        )
+    except subprocess.CalledProcessError as e:
+        raise ValueError(f"dpkg -x 解压失败: {e}")
+    except FileNotFoundError:
+        raise ValueError("dpkg 命令未找到")
+    except subprocess.TimeoutExpired:
+        raise ValueError("dpkg -x 解压超时")
+
+    # dpkg -x 无法提取 control，需要使用 ar -x 或 dpkg -e
+    # 尝试使用 dpkg -e 提取 control
+    control_dir = os.path.join(target_dir, "control")
+    os.makedirs(control_dir, exist_ok=True)
+
+    try:
+        subprocess.run(
+            ["dpkg", "-e", deb_file, control_dir],
+            check=True,
+            capture_output=True,
+            timeout=30,
+        )
+    except (
+        subprocess.CalledProcessError,
+        FileNotFoundError,
+        subprocess.TimeoutExpired,
+    ) as e:
+        # dpkg -e 失败，尝试手动提取 control
+        try:
+            with tempfile.TemporaryDirectory() as temp_dir:
+                subprocess.run(
+                    ["ar", "-x", deb_file],
+                    cwd=temp_dir,
+                    check=True,
+                    capture_output=True,
+                )
+
+                for file in os.listdir(temp_dir):
+                    if file.startswith("control."):
+                        control_tar = os.path.join(temp_dir, file)
+                        with tarfile.open(control_tar, "r:*") as tar:
+                            tar.extractall(control_dir)
+                        break
+        except Exception as e:
+            raise ValueError(f"无法提取 control 文件: {e}")
 
     return control_dir, data_dir
 
