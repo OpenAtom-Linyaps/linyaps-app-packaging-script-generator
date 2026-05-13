@@ -1,8 +1,8 @@
 ---
 name: linglong-fix
-description: '修复玲珑构建项目中的问题，使其通过各项检查。Use when: 验证失败需要修复、linglong.yaml格式问题、desktop文件路径问题、图标目录结构问题。'
-argument-hint: '工程目录和验证报告'
----
+description: >
+  根据验证报告自动修复玲珑构建项目中的问题，
+  包括linglong.yaml格式、desktop文件、图标目录结构、二进制文件权限等。
 
 # 玲珑工程修复
 

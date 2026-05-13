@@ -1,8 +1,8 @@
 ---
 name: compat-testing
-description: '执行玲珑打包测试和兼容性检测。Use when: 需要测试打包结果、运行兼容性检查、验证linglong.yaml格式、检测运行时问题。'
-argument-hint: '工程目录路径'
----
+description: >
+  执行玲珑打包构建测试，验证生成的工程是否可以正常构建，
+  并运行兼容性检测确保应用能在玲珑环境中正常运行。
 
 # 兼容性测试
 

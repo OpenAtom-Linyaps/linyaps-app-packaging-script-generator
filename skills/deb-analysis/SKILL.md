@@ -1,8 +1,8 @@
 ---
 name: deb-analysis
-description: '解析deb包元数据、解压deb文件、提取基础信息。Use when: 需要分析deb包内容、提取包名/版本/依赖信息、解压deb文件获取文件结构。'
-argument-hint: 'deb文件路径'
----
+description: >
+  解析Debian软件包(.deb)文件，提取元数据信息并解压文件内容，
+  为后续玲珑打包工程生成提供基础数据。
 
 # Deb包分析
 
