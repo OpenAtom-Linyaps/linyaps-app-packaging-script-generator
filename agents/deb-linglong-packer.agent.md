@@ -84,7 +84,17 @@ tools:
 - **暂停**: 展示收集的资源，等待用户确认
 - **输出**: files_res目录结构
 
-#### Step 4: 兼容性测试
+#### Step 4: 项目结构验证
+调用 `project-structure-validator` skill：
+- 验证工程目录结构完整性
+- 检查必要文件是否存在（如 `pak_linyaps.sh`、`linglong.yaml`）
+- 检查 `templates/files_res/share/applications/*.desktop` 至少存在1个
+- 检查 `templates/files_res/share/icons/hicolor` 目录结构
+- 验证脚本文件可执行权限
+- **输出**: 验证报告（JSON格式）
+- **失败处理**: 如果验证失败，根据错误类型决定是否调用 `linglong-fix`
+
+#### Step 5: 兼容性测试
 调用 `compat-testing` skill：
 - 验证linglong.yaml格式
 - 验证资源目录结构
@@ -92,14 +102,14 @@ tools:
 - 运行兼容性检测
 - **输出**: 测试报告
 
-#### Step 5: 问题修复（如需要）
+#### Step 6: 问题修复（如需要）
 如果测试失败，调用 `linglong-fix` skill：
 - 根据验证报告修复问题
 - 重新运行测试
 - **暂停**: 无法自动修复时询问用户
 - **输出**: 修复报告
 
-#### Step 6: 完成
+#### Step 7: 完成
 - 保存工程到最终位置
 - 清理临时文件
 - 更新任务状态
@@ -196,6 +206,18 @@ Desktop文件:
 ```bash
 cd skills/deb-analysis
 python3 scripts/deb_to_linglong.py <deb_file> --base <base> --extract-dir <tmp_dir>
+```
+
+### 调用project-structure-validator
+```bash
+cd skills/project-structure-validator
+./scripts/validate_project_structure.sh <project_dir> --json
+
+# 使用自定义配置
+./scripts/validate_project_structure.sh <project_dir> --config custom_rules.json --json
+
+# 自动修复权限问题
+./scripts/validate_project_structure.sh <project_dir> --fix
 ```
 
 ### 调用common-data-verify
