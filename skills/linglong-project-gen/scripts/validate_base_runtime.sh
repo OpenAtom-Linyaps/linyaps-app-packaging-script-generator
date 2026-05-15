@@ -140,8 +140,8 @@ validate_yaml() {
 		HAS_ERRORS=1
 
 		if [ "${FIX_MODE}" = true ]; then
-			sed -i "s|^base:.*|base: ${DEFAULT_BASE_ID}/${DEFAULT_BASE_VERSION}|" "${yaml_file}" 2>/dev/null || \
-				echo "base: ${DEFAULT_BASE_ID}/${DEFAULT_BASE_VERSION}" >> "${yaml_file}"
+			sed -i "s|^base:.*|base: ${DEFAULT_BASE_ID}/${DEFAULT_BASE_VERSION}|" "${yaml_file}" 2>/dev/null ||
+				echo "base: ${DEFAULT_BASE_ID}/${DEFAULT_BASE_VERSION}" >>"${yaml_file}"
 			print_fix "已設置 base: ${DEFAULT_BASE_ID}/${DEFAULT_BASE_VERSION}"
 			HAS_FIXES=1
 		fi
@@ -384,11 +384,134 @@ cross_validate() {
 }
 
 # ==========================================
+# Part 4: 白名單驗證
+# ==========================================
+validate_whitelist() {
+	print_section "白名單驗證"
+
+	local whitelist_file=""
+
+	# 按優先級查找白名單配置文件：
+	# 1. 環境變量指定的路徑
+	# 2. 工程目錄下的 config/base_runtime_whitelist.conf
+	# 3. 腳本所在目錄的 config/base_runtime_whitelist.conf
+	if [ -n "${LINGLONG_WHITELIST_FILE:-}" ] && [ -f "${LINGLONG_WHITELIST_FILE}" ]; then
+		whitelist_file="${LINGLONG_WHITELIST_FILE}"
+	elif [ -f "${PROJECT_DIR}/config/base_runtime_whitelist.conf" ]; then
+		whitelist_file="${PROJECT_DIR}/config/base_runtime_whitelist.conf"
+	else
+		# 嘗試相對於腳本目錄查找
+		local script_dir
+		script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+		if [ -f "${script_dir}/../config/base_runtime_whitelist.conf" ]; then
+			whitelist_file="${script_dir}/../config/base_runtime_whitelist.conf"
+		fi
+	fi
+
+	# 白名單文件不存在時跳過驗證
+	if [ -z "${whitelist_file}" ]; then
+		print_warning "未找到白名單配置文件，跳過白名單驗證"
+		print_warning "可通過環境變量 LINGLONG_WHITELIST_FILE 指定白名單路徑"
+		return 0
+	fi
+
+	if [ ! -r "${whitelist_file}" ]; then
+		print_error "白名單配置文件不可讀: ${whitelist_file}"
+		HAS_ERRORS=1
+		return 1
+	fi
+
+	echo "白名單文件: ${whitelist_file}"
+
+	# 從 linglong.yaml 提取 base 和 runtime 值
+	local yaml_file=""
+	if [ -f "${PROJECT_DIR}/linglong.yaml" ]; then
+		yaml_file="${PROJECT_DIR}/linglong.yaml"
+	elif [ -f "${PROJECT_DIR}/templates/linglong.yaml" ]; then
+		yaml_file="${PROJECT_DIR}/templates/linglong.yaml"
+	fi
+
+	if [ -z "${yaml_file}" ]; then
+		print_warning "找不到 linglong.yaml，跳過白名單驗證"
+		return 0
+	fi
+
+	# 提取 base 和 runtime 值
+	local base_value runtime_value
+	base_value=$(grep "^base:" "${yaml_file}" 2>/dev/null | sed 's/^base:[[:space:]]*//' || true)
+	runtime_value=$(grep "^runtime:" "${yaml_file}" 2>/dev/null | sed 's/^runtime:[[:space:]]*//' || true)
+
+	# 跳過變量引用（envsubst 未替換的情況）
+	if [[ "${base_value}" =~ ^\$\{?[a-zA-Z_] ]]; then
+		print_warning "base 值為變量引用 '${base_value}'，跳過白名單驗證（需先完成變量替換）"
+		return 0
+	fi
+
+	# 解析 base_id/base_version 和 runtime_id/runtime_version
+	local base_id="" base_version="" runtime_id="" runtime_version=""
+
+	if [[ "${base_value}" =~ ^(.+)/(.+)$ ]]; then
+		base_id="${BASH_REMATCH[1]}"
+		base_version="${BASH_REMATCH[2]}"
+	fi
+
+	if [ -n "${runtime_value}" ] && [[ "${runtime_value}" =~ ^(.+)/(.+)$ ]]; then
+		runtime_id="${BASH_REMATCH[1]}"
+		runtime_version="${BASH_REMATCH[2]}"
+	fi
+
+	# 在白名單中查找
+	local found=0
+	local matched_desc=""
+
+	while IFS= read -r line || [ -n "${line}" ]; do
+		# 跳過注釋和空行
+		[[ "${line}" =~ ^[[:space:]]*# ]] && continue
+		[[ "${line}" =~ ^[[:space:]]*$ ]] && continue
+
+		# 提取字段
+		local wl_base wl_runtime wl_desc
+		read -r wl_base wl_runtime wl_desc <<<"${line}"
+
+		# 精確匹配
+		if [ "${wl_base}" = "${base_id}/${base_version}" ]; then
+			if [ "${wl_runtime}" = "${runtime_id}/${runtime_version}" ]; then
+				found=1
+				matched_desc="${wl_desc}"
+				break
+			fi
+			# 匹配無 runtime 的情況
+			if [ "${wl_runtime}" = "-" ] && [ -z "${runtime_id}" ]; then
+				found=1
+				matched_desc="${wl_desc}"
+				break
+			fi
+		fi
+	done <"${whitelist_file}"
+
+	if [ "${found}" -eq 1 ]; then
+		print_success "base/runtime 組合在白名單中: ${base_id}/${base_version} + ${runtime_id}/${runtime_version} (${matched_desc})"
+	else
+		print_warning "base/runtime 組合不在白名單中: ${base_id}/${base_version} + ${runtime_id}/${runtime_version}"
+		echo "  白名單中可用的組合：" >&2
+		while IFS= read -r line || [ -n "${line}" ]; do
+			[[ "${line}" =~ ^[[:space:]]*# ]] && continue
+			[[ "${line}" =~ ^[[:space:]]*$ ]] && continue
+			local wl_base wl_runtime wl_desc
+			read -r wl_base wl_runtime wl_desc <<<"${line}"
+			echo "    ${wl_base} + ${wl_runtime}  # ${wl_desc}" >&2
+		done <"${whitelist_file}"
+		# 不在白名單中為警告，不阻止構建
+	fi
+}
+
+# ==========================================
 # 執行驗證
 # ==========================================
 validate_yaml
 validate_script
 cross_validate
+validate_whitelist
 
 # 輸出結果
 echo ""
