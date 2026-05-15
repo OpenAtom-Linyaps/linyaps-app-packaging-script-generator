@@ -27,10 +27,20 @@ description: >
 project_dir="CI_ll_${package_id}"
 mkdir -p "${project_dir}/templates/files_res"
 mkdir -p "${project_dir}/scripts"
+mkdir -p "${project_dir}/config"
 
 # 拷贝辅助脚本
 cp "scripts/handle_special_paths.sh" "${project_dir}/scripts/"
 chmod +x "${project_dir}/scripts/handle_special_paths.sh"
+
+# 拷贝白名单配置文件（优先使用全局白名单）
+if [ -f "${skill_root}/../config/base_runtime_whitelist.conf" ]; then
+  cp "${skill_root}/../config/base_runtime_whitelist.conf" "${project_dir}/config/"
+  echo "已拷貝全局白名單配置到工程目錄"
+else
+  cp "${skill_root}/config/base_runtime_whitelist.conf" "${project_dir}/config/"
+  echo "已拷貝 skill 級別白名單配置到工程目錄（全局白名單不存在，使用本地副本）"
+fi
 # 注意：不创建 src/ 目录，deb文件路径由用户执行脚本时指定
 ```
 
@@ -103,6 +113,97 @@ build: |
   # 复制桌面文件、图标等资源
   cp -rf /project/files_res/* ${prefix}/
 ```
+
+### 2.5. 驗證 base/runtime 白名單（重要）
+
+**在生成 pak_linyaps.sh 之前，必須驗證 base/runtime 組合是否在白名單中。如果組合不在白名單中，應阻止任務並提示用戶。**
+
+**白名單配置文件查找優先級（本地優先全局）：**
+1. CLI 參數 `--whitelist` 指定的路徑
+2. 環境變量 `LINGLONG_WHITELIST_FILE` 指定的路徑
+3. 工程目錄下 `config/base_runtime_whitelist.conf`
+4. 腳本所在目錄的 `config/base_runtime_whitelist.conf`（skill 級別）
+5. **skills 全局目錄** `config/base_runtime_whitelist.conf`（全局聲明，推薦維護）⭐
+
+```bash
+# 白名單配置文件路徑（按優先級查找）
+whitelist_file=""
+
+# 1. CLI 參數
+if [ -n "${whitelist_file}" ] && [ -f "${whitelist_file}" ]; then
+  : # 已指定
+# 2. 環境變量
+elif [ -n "${LINGLONG_WHITELIST_FILE}" ] && [ -f "${LINGLONG_WHITELIST_FILE}" ]; then
+  whitelist_file="${LINGLONG_WHITELIST_FILE}"
+# 3. 工程目錄
+elif [ -f "${project_dir}/config/base_runtime_whitelist.conf" ]; then
+  whitelist_file="${project_dir}/config/base_runtime_whitelist.conf"
+# 4. skill 級別
+elif [ -f "${skill_root}/config/base_runtime_whitelist.conf" ]; then
+  whitelist_file="${skill_root}/config/base_runtime_whitelist.conf"
+# 5. 全局目錄（推薦）
+elif [ -f "${skill_root}/../config/base_runtime_whitelist.conf" ]; then
+  whitelist_file="${skill_root}/../config/base_runtime_whitelist.conf"
+fi
+
+if [ -z "${whitelist_file}" ]; then
+  echo "警告: 未找到白名單配置文件，跳過白名單驗證" >&2
+  echo "  可在以下位置放置白名單：" >&2
+  echo "    - ${project_dir}/config/base_runtime_whitelist.conf（工程級別）" >&2
+  echo "    - ${skill_root}/config/base_runtime_whitelist.conf（skill 級別）" >&2
+  echo "    - ${skill_root}/../config/base_runtime_whitelist.conf（全局）" >&2
+else
+  # 在白名單中查找
+  found=0
+  while IFS= read -r line; do
+    # 跳過注釋和空行
+    [[ "${line}" =~ ^[[:space:]]*# ]] && continue
+    [[ "${line}" =~ ^[[:space:]]*$ ]] && continue
+    
+    # 提取前兩個字段
+    read -r wl_base wl_runtime _ <<<"${line}"
+    
+    # 精確匹配
+    if [ "${wl_base}" = "${base_id}/${base_version}" ] && \
+       [ "${wl_runtime}" = "${runtime_id}/${runtime_version}" ]; then
+      found=1
+      break
+    fi
+  done < "${whitelist_file}"
+
+  if [ "${found}" -eq 0 ]; then
+    echo "錯誤: base/runtime 組合不在白名單中，任務被阻止！" >&2
+    echo "  當前組合: ${base_id}/${base_version} + ${runtime_id}/${runtime_version}" >&2
+    echo "  白名單文件: ${whitelist_file}" >&2
+    echo "  如需使用此組合，請先在白名單中添加（推薦修改全局白名單：skills/config/base_runtime_whitelist.conf）" >&2
+    exit 1
+  fi
+
+  echo "白名單驗證通過: ${base_id}/${base_version} + ${runtime_id}/${runtime_version}"
+fi
+```
+
+**白名單配置文件格式 (`config/base_runtime_whitelist.conf`)：**
+
+```
+# 格式：<base_id>/<base_version> <runtime_id>/<runtime_version> <描述>
+# runtime_id 可為 "-" 表示無需 runtime
+
+# Qt6/DTK6 應用（推薦）
+org.deepin.base/25.2.2	org.deepin.runtime.dtk/25.2.2	Qt6/DTK6 應用（推薦默認）
+
+# Qt6 WebEngine 應用
+org.deepin.base/25.2.2	org.deepin.runtime.webengine/25.2.2	Qt6 WebEngine 應用
+
+# 純 base 應用（無 runtime）
+org.deepin.base/25.2.2	-	純 base 應用
+```
+
+**重要：**
+- 白名單驗證是**強制性的**，不在白名單中的組合會阻止任務
+- 這確保了生成的 pak_linyaps.sh 使用經過驗證的 base/runtime 組合
+- **推薦維護全局白名單**（`skills/config/base_runtime_whitelist.conf`），所有 skill 和工程共享
+- 如需添加新組合，請優先在全局白名單中添加，生成工程時會自動同步到工程目錄
 
 ### 3. 生成 pak_linyaps.sh
 
@@ -338,6 +439,11 @@ with open('config/packages.csv', 'r') as f:
 | `--origin_version` | 二选一 | 原始版本号（自动转换为玲珑格式） |
 | `--linyaps_arch` | 否 | 目标架构 (x86_64/arm64)，默认当前系统架构 |
 | `--build_tmp_dir` | 否 | 构建缓存目录，未指定时使用临时目录 |
+| `--base_id` | 否 | 基础运行时ID（如 org.deepin.base），默认使用白名单中推荐的组合 |
+| `--base_version` | 否 | 基础运行时版本（如 25.2.2） |
+| `--runtime_id` | 否 | 应用运行时ID（如 org.deepin.runtime.dtk） |
+| `--runtime_version` | 否 | 应用运行时版本（如 25.2.2） |
+| `--whitelist` | 否 | 白名单配置文件路径，未指定时按优先级自动查找（工程→skill→全局） |
 
 **注意：**
 - `${command}` 应为相对路径的二进制名称（如 `code`），而非绝对路径
@@ -348,6 +454,8 @@ with open('config/packages.csv', 'r') as f:
 ```
 CI_ll_<package_id>/
 ├── pak_linyaps.sh              # 打包脚本
+├── config/                     # 配置文件目录
+│   └── base_runtime_whitelist.conf  # base/runtime 白名单配置（优先从全局 skills/config/ 拷贝）
 ├── scripts/                    # 辅助脚本目录
 │   └── handle_special_paths.sh # 特殊路径处理脚本
 └── templates/
@@ -360,7 +468,9 @@ CI_ll_<package_id>/
             └── ...
 ```
 
-**注意：工程初始化时不包含任何源文件（deb包），deb路径由用户执行脚本时通过 `--src_path` 参数指定。**
+**注意：**
+- 工程初始化时不包含任何源文件（deb包），deb路径由用户执行脚本时通过 `--src_path` 参数指定
+- `config/base_runtime_whitelist.conf` 用於驗證 base/runtime 組合的合法性，優先從全局 `skills/config/` 拷貝，全局不存在時使用 skill 級別副本
 
 ## 二进制软链处理
 
@@ -591,6 +701,8 @@ validate_base_runtime
 - [ ] **`--base_id`、`--base_version`、`--runtime_id`、`--runtime_version` 命令行参数已支持**
 - [ ] **`validate_base_runtime()` 函数已定义并在 `init_global_data()` 末尾调用**
 - [ ] **case 语句中无 `base_id="${base_id}"` 等自引用赋值**
+- [ ] **`validate_base_runtime_whitelist()` 白名单验证函数已定义**
+- [ ] **白名单配置文件 `config/base_runtime_whitelist.conf` 已复制到工程目录**
 
 ### 6. 生成后验证步骤
 
@@ -607,6 +719,63 @@ validate_base_runtime
 "${skill_root}/../compat-testing/scripts/validate_linglong_yaml.py" \
   --input "${project_dir}/templates/linglong.yaml" \
   --exec-name "${binary_name}"
+```
+
+### 7. base/runtime 白名单验证
+
+通过白名单配置文件 `config/base_runtime_whitelist.conf` 验证 base/runtime 组合是否为已知合规组合。
+
+**白名单文件格式：**
+```
+# 注释行
+<base_id>/<base_version>	<runtime_id>/<runtime_version>	描述
+```
+
+**当前白名单中的合规组合：**
+
+| base | runtime | 适用场景 |
+|------|---------|---------|
+| `org.deepin.base/25.2.2` | `org.deepin.runtime.dtk/25.2.2` | Qt6/DTK6 应用（推荐默认） |
+| `org.deepin.base/25.2.2` | `org.deepin.runtime.webengine/25.2.2` | Qt6 WebEngine 应用 |
+| `org.deepin.base/23.1.0` | `org.deepin.runtime.dtk/23.1.0` | Qt5/DTK5 应用 |
+| `org.deepin.base/25.2.2` | `-` | 纯 base 应用（无 runtime） |
+| `org.deepin.base/23.1.0` | `-` | 纯 base 应用（无 runtime，23.1.0） |
+
+**白名单查找优先级（本地优先全局）：**
+1. CLI 參數 `--whitelist` 指定的路徑
+2. 环境变量 `LINGLONG_WHITELIST_FILE` 指定的路径
+3. 工程目录下的 `config/base_runtime_whitelist.conf`
+4. 脚本所在目录的 `config/base_runtime_whitelist.conf`（skill 级别）
+5. **skills 全局目录** `config/base_runtime_whitelist.conf`（全局声明，推荐维护）⭐
+
+**验证行为：**
+- 白名单验证为**阻止级别**，不在白名单中的组合会阻止构建（exit 1）
+- 白名单文件不存在时，跳过白名单验证（不影响构建）
+- 白名单文件不可读时，报错并阻止构建
+
+**工程初始化时复制白名单（优先全局）：**
+```bash
+# 创建工程目录时，优先复制全局白名单配置文件
+mkdir -p "${project_dir}/config"
+if [ -f "${skill_root}/../config/base_runtime_whitelist.conf" ]; then
+  cp "${skill_root}/../config/base_runtime_whitelist.conf" "${project_dir}/config/"
+else
+  cp "${skill_root}/config/base_runtime_whitelist.conf" "${project_dir}/config/"
+fi
+```
+
+**自定义白名单：**
+```bash
+# 通过环境变量指定自定义白名单
+export LINGLONG_WHITELIST_FILE=/path/to/custom_whitelist.conf
+
+# 或在工程目录下放置自定义白名单（优先于全局）
+if [ -f "${skill_root}/../config/base_runtime_whitelist.conf" ]; then
+  cp "${skill_root}/../config/base_runtime_whitelist.conf" "${project_dir}/config/"
+else
+  cp "${skill_root}/config/base_runtime_whitelist.conf" "${project_dir}/config/"
+fi
+# 编辑 ${project_dir}/config/base_runtime_whitelist.conf 添加新组合
 ```
 
 ---

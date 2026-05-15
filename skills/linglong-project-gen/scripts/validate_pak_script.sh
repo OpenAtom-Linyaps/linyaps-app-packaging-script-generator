@@ -348,6 +348,111 @@ check_validate_function() {
 	else
 		print_warning "validate_base_runtime 未在 init_global_data() 末尾調用"
 	fi
+
+	# 檢查白名單驗證函數
+	if grep -q "validate_base_runtime_whitelist" "${SCRIPT_FILE}" 2>/dev/null; then
+		print_success "validate_base_runtime_whitelist() 白名單驗證函數已存在"
+	else
+		print_warning "validate_base_runtime_whitelist() 白名單驗證函數未定義（建議添加以支持白名單校驗）"
+	fi
+}
+
+# 白名單驗證
+check_whitelist() {
+	echo ""
+	echo "--- 白名單驗證 ---"
+
+	local whitelist_file=""
+
+	# 按優先級查找白名單配置文件
+	if [ -n "${LINGLONG_WHITELIST_FILE:-}" ] && [ -f "${LINGLONG_WHITELIST_FILE}" ]; then
+		whitelist_file="${LINGLONG_WHITELIST_FILE}"
+	elif [ -f "${PROJECT_DIR}/config/base_runtime_whitelist.conf" ]; then
+		whitelist_file="${PROJECT_DIR}/config/base_runtime_whitelist.conf"
+	else
+		local script_dir
+		script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+		if [ -f "${script_dir}/../config/base_runtime_whitelist.conf" ]; then
+			whitelist_file="${script_dir}/../config/base_runtime_whitelist.conf"
+		fi
+	fi
+
+	if [ -z "${whitelist_file}" ]; then
+		print_warning "未找到白名單配置文件，跳過白名單驗證"
+		print_warning "可通過環境變量 LINGLONG_WHITELIST_FILE 指定白名單路徑"
+		return 0
+	fi
+
+	if [ ! -r "${whitelist_file}" ]; then
+		print_error "白名單配置文件不可讀: ${whitelist_file}"
+		HAS_ERRORS=1
+		return 1
+	fi
+
+	echo "白名單文件: ${whitelist_file}"
+
+	# 從腳本中提取 base_id、base_version、runtime_id、runtime_version 的實際值
+	local script_base_id="" script_base_version="" script_runtime_id="" script_runtime_version=""
+
+	# 提取頂部變量定義（排除 DEFAULT_ 前綴和 case 內部的賦值）
+	script_base_id=$(grep -E "^[[:space:]]*base_id=" "${SCRIPT_FILE}" 2>/dev/null | head -1 | cut -d= -f2- | sed 's/^"//;s/"$//' || true)
+	script_base_version=$(grep -E "^[[:space:]]*base_version=" "${SCRIPT_FILE}" 2>/dev/null | head -1 | cut -d= -f2- | sed 's/^"//;s/"$//' || true)
+	script_runtime_id=$(grep -E "^[[:space:]]*runtime_id=" "${SCRIPT_FILE}" 2>/dev/null | head -1 | cut -d= -f2- | sed 's/^"//;s/"$//' || true)
+	script_runtime_version=$(grep -E "^[[:space:]]*runtime_version=" "${SCRIPT_FILE}" 2>/dev/null | head -1 | cut -d= -f2- | sed 's/^"//;s/"$//' || true)
+
+	# 跳過變量引用
+	if [[ "${script_base_id}" =~ ^\$\{?DEFAULT_ ]] && [[ "${script_base_version}" =~ ^\$\{?DEFAULT_ ]]; then
+		# 引用 DEFAULT_ 變量，提取 DEFAULT_ 值
+		script_base_id=$(grep -E "^[[:space:]]*DEFAULT_BASE_ID=" "${SCRIPT_FILE}" 2>/dev/null | head -1 | cut -d= -f2- | sed 's/^"//;s/"$//' || true)
+		script_base_version=$(grep -E "^[[:space:]]*DEFAULT_BASE_VERSION=" "${SCRIPT_FILE}" 2>/dev/null | head -1 | cut -d= -f2- | sed 's/^"//;s/"$//' || true)
+		script_runtime_id=$(grep -E "^[[:space:]]*DEFAULT_RUNTIME_ID=" "${SCRIPT_FILE}" 2>/dev/null | head -1 | cut -d= -f2- | sed 's/^"//;s/"$//' || true)
+		script_runtime_version=$(grep -E "^[[:space:]]*DEFAULT_RUNTIME_VERSION=" "${SCRIPT_FILE}" 2>/dev/null | head -1 | cut -d= -f2- | sed 's/^"//;s/"$//' || true)
+	fi
+
+	# 跳過無法解析的值
+	if [[ "${script_base_id}" =~ ^\$\{?[a-zA-Z_] ]] || [ -z "${script_base_id}" ]; then
+		print_warning "base_id 值為變量引用或為空，跳過白名單驗證"
+		return 0
+	fi
+
+	# 在白名單中查找
+	local found=0
+	local matched_desc=""
+
+	while IFS= read -r line || [ -n "${line}" ]; do
+		[[ "${line}" =~ ^[[:space:]]*# ]] && continue
+		[[ "${line}" =~ ^[[:space:]]*$ ]] && continue
+
+		local wl_base wl_runtime wl_desc
+		read -r wl_base wl_runtime wl_desc <<<"${line}"
+
+		if [ "${wl_base}" = "${script_base_id}/${script_base_version}" ]; then
+			if [ "${wl_runtime}" = "${script_runtime_id}/${script_runtime_version}" ]; then
+				found=1
+				matched_desc="${wl_desc}"
+				break
+			fi
+			if [ "${wl_runtime}" = "-" ] && [ -z "${script_runtime_id}" ]; then
+				found=1
+				matched_desc="${wl_desc}"
+				break
+			fi
+		fi
+	done <"${whitelist_file}"
+
+	if [ "${found}" -eq 1 ]; then
+		print_success "base/runtime 組合在白名單中: ${script_base_id}/${script_base_version} + ${script_runtime_id}/${script_runtime_version} (${matched_desc})"
+	else
+		print_warning "base/runtime 組合不在白名單中: ${script_base_id}/${script_base_version} + ${script_runtime_id}/${script_runtime_version}"
+		echo "  白名單中可用的組合：" >&2
+		while IFS= read -r line || [ -n "${line}" ]; do
+			[[ "${line}" =~ ^[[:space:]]*# ]] && continue
+			[[ "${line}" =~ ^[[:space:]]*$ ]] && continue
+			local wl_base wl_runtime wl_desc
+			read -r wl_base wl_runtime wl_desc <<<"${line}"
+			echo "    ${wl_base} + ${wl_runtime}  # ${wl_desc}" >&2
+		done <"${whitelist_file}"
+	fi
 }
 
 # 執行所有檢查
@@ -361,6 +466,7 @@ check_case_self_reference
 check_default_variables
 check_cli_params
 check_validate_function
+check_whitelist
 
 # 輸出結果
 echo ""

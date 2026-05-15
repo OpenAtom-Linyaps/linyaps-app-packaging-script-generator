@@ -15,6 +15,9 @@ base_version="${DEFAULT_BASE_VERSION}"
 runtime_id="${DEFAULT_RUNTIME_ID}"
 runtime_version="${DEFAULT_RUNTIME_VERSION}"
 
+# 白名單配置文件路徑（可通過 --whitelist 參數或環境變量覆蓋）
+whitelist_file=""
+
 # Options
 ## Auto cleaning, default blank value means "true/TRUE"
 auto_clean=""
@@ -76,6 +79,9 @@ init_global_data() {
 		--runtime_version)
 			runtime_version="$val"
 			;;
+		--whitelist)
+			whitelist_file="$val"
+			;;
 		esac
 	done
 
@@ -117,8 +123,10 @@ init_global_data() {
 # 2. 值不是變量引用（如 ${var} 或 $var）
 # 3. ID 格式符合反向域名規範（如 org.deepin.base）
 # 4. Version 格式為 X.Y.Z 或 X.Y.Z.W
+# 5. base/runtime 組合必須在白名單中（阻止不合規組合）
 validate_base_runtime() {
 	local has_error=0
+	local has_warning=0
 
 	# 定義需要驗證的字段：名稱、值、ID正則、描述
 	local fields=(
@@ -185,6 +193,17 @@ validate_base_runtime() {
 		echo "驗證通過: ${field_desc} (${field_name}='${field_value}')"
 	done
 
+	# 檢查5：白名單驗證（base/runtime 組合必須為已知合規組合，否則阻止構建）
+	# 僅在前面檢查全部通過時執行，避免對空值或變量引用做白名單匹配
+	if [ "${has_error}" -eq 0 ]; then
+		validate_base_runtime_whitelist
+		case $? in
+		0) ;;             # 白名單驗證通過
+		1) has_error=1 ;; # 不在白名單中，阻止構建
+		2) has_error=1 ;; # 白名單文件錯誤，阻止構建
+		esac
+	fi
+
 	if [ "${has_error}" -eq 1 ]; then
 		echo "" >&2
 		echo "========================================" >&2
@@ -194,6 +213,7 @@ validate_base_runtime() {
 		echo "  --base_version=<值>   基礎運行時版本（如 25.2.2）" >&2
 		echo "  --runtime_id=<值>     應用運行時ID（如 org.deepin.runtime.dtk）" >&2
 		echo "  --runtime_version=<值> 應用運行時版本（如 25.2.2）" >&2
+		echo "  --whitelist=<路徑>    白名單配置文件路徑" >&2
 		echo "========================================" >&2
 		exit 1
 	fi
@@ -201,6 +221,125 @@ validate_base_runtime() {
 	echo "base/runtime 配置驗證通過"
 	echo "  base: ${base_id}/${base_version}"
 	echo "  runtime: ${runtime_id}/${runtime_version}"
+}
+
+# 白名單驗證：檢查 base/runtime 組合是否為已知合規組合
+# 返回碼：
+#   0 - 白名單驗證通過（組合在白名單中）
+#   1 - 不在白名單中（阻止構建）
+#   2 - 白名單文件讀取錯誤（阻止構建）
+validate_base_runtime_whitelist() {
+	local wl_file=""
+
+	# 按優先級查找白名單配置文件（本地優先全局）：
+	# 1. CLI 參數 --whitelist 指定的路徑
+	# 2. 環境變量 LINGLONG_WHITELIST_FILE 指定的路徑
+	# 3. 工程目錄下的 config/base_runtime_whitelist.conf
+	# 4. 腳本所在目錄的 config/base_runtime_whitelist.conf（skill 級別）
+	# 5. skills 全局目錄的 config/base_runtime_whitelist.conf（全局聲明）
+	if [ -n "${whitelist_file:-}" ] && [ -f "${whitelist_file}" ]; then
+		wl_file="${whitelist_file}"
+	elif [ -n "${LINGLONG_WHITELIST_FILE:-}" ] && [ -f "${LINGLONG_WHITELIST_FILE}" ]; then
+		wl_file="${LINGLONG_WHITELIST_FILE}"
+	elif [ -f "${project_root:-}/config/base_runtime_whitelist.conf" ]; then
+		wl_file="${project_root}/config/base_runtime_whitelist.conf"
+	else
+		# 嘗試相對於腳本目錄查找（skill 級別 → 全局）
+		local script_dir
+		script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+		if [ -f "${script_dir}/config/base_runtime_whitelist.conf" ]; then
+			wl_file="${script_dir}/config/base_runtime_whitelist.conf"
+		# 全局白名單：腳本位於 skills/<skill>/templates/，全局配置位於 skills/config/
+		elif [ -f "${script_dir}/../config/base_runtime_whitelist.conf" ]; then
+			wl_file="${script_dir}/../config/base_runtime_whitelist.conf"
+		# 兼容：腳本位於更深層目錄時，向上查找 skills/config/
+		else
+			local search_dir="${script_dir}"
+			while [ "${search_dir}" != "/" ]; do
+				if [ -f "${search_dir}/config/base_runtime_whitelist.conf" ]; then
+					wl_file="${search_dir}/config/base_runtime_whitelist.conf"
+					break
+				fi
+				# 檢測是否到達 skills 根目錄（包含 skill 子目錄的特徵）
+				if [ -d "${search_dir}/linglong-project-gen" ] && [ -d "${search_dir}/config" ]; then
+					if [ -f "${search_dir}/config/base_runtime_whitelist.conf" ]; then
+						wl_file="${search_dir}/config/base_runtime_whitelist.conf"
+						break
+					fi
+				fi
+				search_dir="$(dirname "${search_dir}")"
+			done
+		fi
+	fi
+
+	# 白名單文件不存在時跳過驗證（不阻止構建，但輸出提示）
+	if [ -z "${wl_file}" ]; then
+		echo "提示: 未找到白名單配置文件，跳過白名單驗證" >&2
+		echo "  可通過以下方式指定白名單路徑：" >&2
+		echo "    1. --whitelist=<路徑> 命令行參數" >&2
+		echo "    2. LINGLONG_WHITELIST_FILE 環境變量" >&2
+		echo "    3. 工程目錄下 config/base_runtime_whitelist.conf" >&2
+		echo "    4. skills 全局目錄 config/base_runtime_whitelist.conf" >&2
+		return 0
+	fi
+
+	if [ ! -r "${wl_file}" ]; then
+		echo "錯誤: 白名單配置文件不可讀: ${wl_file}" >&2
+		return 2
+	fi
+
+	echo "白名單驗證: 使用配置文件 ${wl_file}"
+
+	# 構建查找鍵：base_id/base_version runtime_id/runtime_version
+	local search_key="${base_id}/${base_version}	${runtime_id}/${runtime_version}"
+	# 也構建無 runtime 的查找鍵
+	local search_key_no_runtime="${base_id}/${base_version}	-"
+
+	# 在白名單中查找（跳過注釋和空行）
+	local found=0
+	while IFS= read -r line || [ -n "${line}" ]; do
+		# 跳過注釋和空行
+		[[ "${line}" =~ ^[[:space:]]*# ]] && continue
+		[[ "${line}" =~ ^[[:space:]]*$ ]] && continue
+
+		# 提取前兩個字段（base runtime），忽略描述部分
+		local wl_base wl_runtime
+		read -r wl_base wl_runtime _ <<<"${line}"
+
+		# 精確匹配 base 和 runtime 組合
+		if [ "${wl_base}" = "${base_id}/${base_version}" ]; then
+			if [ "${wl_runtime}" = "${runtime_id}/${runtime_version}" ]; then
+				found=1
+				break
+			fi
+			# 也匹配無 runtime 的情況
+			if [ "${wl_runtime}" = "-" ] && [ -z "${runtime_id}" ]; then
+				found=1
+				break
+			fi
+		fi
+	done <"${wl_file}"
+
+	if [ "${found}" -eq 1 ]; then
+		echo "白名單驗證通過: ${base_id}/${base_version} + ${runtime_id}/${runtime_version}"
+		return 0
+	else
+		echo "錯誤: base/runtime 組合不在白名單中，構建被阻止！" >&2
+		echo "  當前組合: ${base_id}/${base_version} + ${runtime_id}/${runtime_version}" >&2
+		echo "  白名單中可用的組合：" >&2
+		# 列出白名單中所有有效條目
+		while IFS= read -r line || [ -n "${line}" ]; do
+			[[ "${line}" =~ ^[[:space:]]*# ]] && continue
+			[[ "${line}" =~ ^[[:space:]]*$ ]] && continue
+			local wl_base wl_runtime wl_desc
+			read -r wl_base wl_runtime wl_desc <<<"${line}"
+			echo "    ${wl_base} + ${wl_runtime}  # ${wl_desc}" >&2
+		done <"${wl_file}"
+		echo "" >&2
+		echo "  如需使用此組合，請先在白名單配置文件中添加：" >&2
+		echo "    ${wl_file}" >&2
+		return 1
+	fi
 }
 
 validate_version_format() {
