@@ -35,6 +35,108 @@ tools:
 - 若未指定base，则默认使用`org.deepin.base/25.2.2`
 - 若未指定runtime，则默认使用`org.deepin.runtime.dtk/25.2.2`
 
+## Skills 目录约定
+
+本 agent 协调以下专业 skills，各 skill 的资源路径约定如下：
+
+| Skill | 路径 | 核心脚本 | 模板/资源 |
+|-------|------|---------|-----------|
+| deb-analysis | `skills/deb-analysis/` | `scripts/deb_to_linglong.py` | — |
+| linglong-project-gen | `skills/linglong-project-gen/` | `templates/pak_linyaps.sh` | `templates/*.yaml`, `linglong.yaml` |
+| resource-collector | `skills/resource-collector/` | —（純 SKILL.md 指導型，無腳本） | — |
+| project-structure-validator | `skills/project-structure-validator/` | `scripts/validate_project_structure.sh` | — |
+| compat-testing | `skills/compat-testing/` | `scripts/common-data-verify.py`, `scripts/validate_linglong_yaml.py` | `scripts/demos/compat_checker.py` |
+| linglong-fix | `skills/linglong-fix/` | `scripts/fix_package_id.sh`, `scripts/validate_package_id.sh` | — |
+
+**调用约定**：所有脚本调用均使用相對於 workspace 根目錄的路徑，**不要**使用 `cd` 切換工作目錄後再執行。
+
+## Workspace 根目錄檢測
+
+在查找 skills 之前，**必須先確認 workspace 根目錄**。LLM 的工作目錄可能不是 workspace 根目錄，導致相對路徑全部失效。
+
+### 檢測方法（按順序執行）
+
+1. **檢查當前目錄**：若包含 `skills/` 和 `agents/` 目錄，即為 workspace 根目錄
+2. **向上遍歷父目錄**：最多 5 層，查找包含 `skills/` 和 `agents/` 的目錄
+3. **客戶端目錄搜索**：在已聲明的客戶端配置目錄中搜索
+
+### 檢測命令
+
+```bash
+# 方法1: 檢查當前目錄
+[ -d "skills" ] && [ -d "agents" ] && echo "Workspace root: $(pwd)"
+
+# 方法2: 向上查找（最多5層）
+current=$(pwd); for i in $(seq 1 5); do [ -d "$current/skills" ] && [ -d "$current/agents" ] && echo "Workspace root: $current" && break; current=$(dirname "$current"); done
+
+# 方法3: 客戶端目錄搜索（後備）— 只在已聲明的客戶端配置目錄中搜索
+for dir in \
+  "$HOME/.config/opencode" \
+  "$HOME/.local/share/opencode" \
+  "$HOME/.opencode" \
+  "$HOME/.claude" \
+  "$HOME/.cline/rules"; do
+  [ -d "$dir" ] && find "$dir" -maxdepth 4 -type d -name "skills" -exec sh -c '[ -d "$(dirname {})/agents" ] && echo "Workspace root: $(dirname {})"' \; 2>/dev/null
+done
+```
+
+**確認後**：所有後續路徑都基於此 workspace 根目錄。將根目錄路徑記為 `WORKSPACE_ROOT`，後續所有腳本調用使用 `$WORKSPACE_ROOT/skills/...` 或相對路徑。
+
+## Skills 查找策略
+
+### Step 1: 相對路徑（首選）
+從 workspace 根目錄直接使用相對路徑：
+```bash
+ls skills/deb-analysis/scripts/deb_to_linglong.py
+ls skills/linglong-project-gen/templates/pak_linyaps.sh
+```
+
+### Step 2: Workspace 內搜索（Step 1 失敗時）
+```bash
+find . -path "*/skills/deb-analysis/scripts/deb_to_linglong.py" 2>/dev/null
+find . -path "*/skills/linglong-project-gen/templates/pak_linyaps.sh" 2>/dev/null
+```
+
+### Step 3: 客戶端配置目錄搜索（Step 2 失敗時）
+
+只在已聲明的 agent 客戶端配置目錄中搜索，**禁止**對 `~` 或 `/` 進行寬泛搜索：
+
+```bash
+# 在已聲明的客戶端目錄中搜索 skills
+for dir in \
+  "$HOME/.config/opencode" \
+  "$HOME/.local/share/opencode" \
+  "$HOME/.opencode" \
+  "$HOME/.claude" \
+  "$HOME/.cline/rules"; do
+  [ -d "$dir" ] && find "$dir" -maxdepth 4 -type d -name "skills" 2>/dev/null
+done
+
+# 若找到 skills 目錄，列出其內容以確認結構
+# find <找到的skills路徑> -maxdepth 3 -type f -name "SKILL.md" 2>/dev/null
+```
+
+### Step 4: 詢問用戶（所有步驟失敗時）
+若以上步驟均無法找到 skills，**暫停並詢問用戶**提供正確路徑。
+
+### ⚠️ find 命令使用規範
+- **搜索範圍**：限定在已聲明的客戶端配置目錄中搜索（見下方路徑表），**禁止** `find ~` 或 `find /` 等寬泛搜索
+- **maxdepth**：客戶端目錄內搜索使用 `4`，workspace 內搜索使用 `5`
+- **過濾**：始終使用 `2>/dev/null` 過濾權限錯誤
+- **限制輸出**：使用 `head` 限制結果數量
+- **禁止無目標搜索**：不要使用 `find / -name "*.py"`、`find ~ -name "skills"` 等無目標搜索
+
+### 客戶端 Skills 路徑白名單
+
+以下為各客戶端的 skills 路徑，作為 Step 3 搜索的**白名單**。搜索範圍**僅限**這些目錄：
+
+| 客戶端 | 專案級路徑 | 全局路徑 (XDG) |
+|--------|-----------|----------------|
+| OpenCode | `.opencode/agents/`, `.opencode/skills/<skill>/` | `~/.config/opencode/`, `~/.local/share/opencode/` |
+| Claude Code | `~/.claude/` | — |
+| Cline | `.clinerules/`, `.agents/skills/<skill>/` | `~/.cline/rules/` |
+
+> **注意**：所有腳本調用使用相對於 workspace 根目錄的路徑，**不要**使用 `cd` 切換工作目錄後再執行。
 
 ## 工作流程
 
@@ -202,34 +304,44 @@ Desktop文件:
 
 ## 工具调用示例
 
+### 调用前确认路径
+```bash
+# 确认 workspace 根目录（若尚未确认）
+if [ -d "skills" ] && [ -d "agents" ]; then
+    echo "Workspace root: $(pwd)"
+else
+    # 向上查找
+    current=$(pwd); for i in $(seq 1 5); do
+        [ -d "$current/skills" ] && [ -d "$current/agents" ] && echo "Workspace root: $current" && break
+        current=$(dirname "$current")
+    done
+fi
+```
+
 ### 调用deb-analysis
 ```bash
-cd skills/deb-analysis
-python3 scripts/deb_to_linglong.py <deb_file> --base <base> --extract-dir <tmp_dir>
+python3 skills/deb-analysis/scripts/deb_to_linglong.py <deb_file> --base <base> --extract-dir <tmp_dir>
 ```
 
 ### 调用project-structure-validator
 ```bash
-cd skills/project-structure-validator
-./scripts/validate_project_structure.sh <project_dir> --json
+bash skills/project-structure-validator/scripts/validate_project_structure.sh <project_dir> --json
 
 # 使用自定义配置
-./scripts/validate_project_structure.sh <project_dir> --config custom_rules.json --json
+bash skills/project-structure-validator/scripts/validate_project_structure.sh <project_dir> --config custom_rules.json --json
 
 # 自动修复权限问题
-./scripts/validate_project_structure.sh <project_dir> --fix
+bash skills/project-structure-validator/scripts/validate_project_structure.sh <project_dir> --fix
 ```
 
 ### 调用common-data-verify
 ```bash
-cd skills/compat-testing
-python3 scripts/common-data-verify.py <files_res_dir> --json --output report.json
+python3 skills/compat-testing/scripts/common-data-verify.py <files_res_dir> --json --output report.json
 ```
 
 ### 调用validate_linglong_yaml
 ```bash
-cd skills/compat-testing
-python3 scripts/validate_linglong_yaml.py --input linglong.yaml --exec-name "app %U" --json
+python3 skills/compat-testing/scripts/validate_linglong_yaml.py --input linglong.yaml --exec-name "app %U" --json
 ```
 
 ### 调用compat_checker
@@ -243,8 +355,7 @@ success, message = checker.check()
 
 ### 执行打包脚本
 ```bash
-cd skills/linglong-project-gen
-./scripts/pak_linyaps.sh --linyaps_arch=x86_64 --origin_version=<ver> --src_path=<deb>
+bash skills/linglong-project-gen/scripts/pak_linyaps.sh --linyaps_arch=x86_64 --origin_version=<ver> --src_path=<deb>
 ```
 
 ## 注意事项
@@ -255,6 +366,7 @@ cd skills/linglong-project-gen
 4. **临时文件**: 处理完成后清理临时解压目录
 5. **日志保存**: 所有测试和构建日志保存到 `reports/` 目录
 6. **并发控制**: 如果检测到要同时处理多个来源包，应该进行队列管理，每次处理一个包，限制并发数量
+7. **多客户端兼容性**: 若工具调用失败，先按「Workspace 根目錄檢測」確認根目錄，再按「Skills 查找策略」逐步查找；检查是否使用了 `cd` 切换工作目录，应改用绝对路径或相对workspace根目录的路径
 
 ## 开始处理
 
