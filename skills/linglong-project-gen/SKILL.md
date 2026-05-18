@@ -112,6 +112,9 @@ build: |
 
   # 复制桌面文件、图标等资源
   cp -rf /project/files_res/* ${prefix}/
+
+  # 創建玲瓏構建標識文件
+  touch ${prefix}/.linyaps_genius
 ```
 
 ### 2.5. 驗證 base/runtime 白名單（重要）
@@ -348,6 +351,12 @@ build_pak() {
       cd "${build_tmp_dir}"
     fi
   fi
+
+  # 創建玲瓏構建標識文件
+  # binary/ 目錄對應 linglong.yaml 中的 ${prefix}
+  # 此文件用於標識由 linyaps 系統生成的構建產物
+  touch "${binary_dir}/.linyaps_genius"
+  echo "Created identity file: ${binary_dir}/.linyaps_genius"
 
   ll-builder build --skip-output-check
   building_status=$?

@@ -631,6 +631,12 @@ WRAPPER_EOF
 	# 检测 binary/bin/bin/ 嵌套问题并自动修复
 	"${project_root}/scripts/validate_bin_nesting.sh" "${binary_dir}" --fix
 
+	# 創建玲瓏構建標識文件
+	# binary/ 目錄對應 linglong.yaml 中的 ${prefix}
+	# 此文件用於標識由 linyaps 系統生成的構建產物
+	touch "${binary_dir}/.linyaps_genius"
+	echo "Created identity file: ${binary_dir}/.linyaps_genius"
+
 	## Building & Exporting
 	ll-builder build --skip-output-check
 	building_status=$?
