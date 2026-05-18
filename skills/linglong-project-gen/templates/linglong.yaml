@@ -27,8 +27,7 @@ buildext:
       - gopls
       - zsh
 
-command:
-  - "${command}"
+command: ""
 
 build: |
   ##Extract res

@@ -139,7 +139,11 @@ def copy_resources(resources: dict, target_dir: str, package_id: str):
 
 ```python
 def fix_desktop_file(desktop_path: str, package_id: str):
-    """修复desktop文件中的路径，使其符合玲珑规范"""
+    """修复desktop文件中的Icon路径，使其符合玲珑规范
+    
+    ⚠️ 注意：此函数只修复 Icon 路径，不修改 Exec 路径！
+    Exec 路径由 pak_linyaps.sh 在构建时通过 wrapper 机制自动处理。
+    """
     with open(desktop_path, 'r') as f:
         content = f.read()
     
@@ -147,20 +151,25 @@ def fix_desktop_file(desktop_path: str, package_id: str):
     # Icon=/usr/share/icons/xxx -> Icon=xxx
     content = re.sub(r'Icon=/.*?/([^/]+)\.(png|svg)', r'Icon=\1', content)
     
-    # 修复Exec路径为相对路径
-    # 玲珑规范要求使用相对路径，二进制软链由pak_linyaps.sh处理
-    # Exec=/usr/bin/app %F -> Exec=app %F
-    # Exec=/opt/apps/com.example/files/bin/app/app %F -> Exec=app %F
-    content = re.sub(r'Exec=/[^ ]*?/([^/]+)(\s|$)', r'Exec=\1\2', content)
+    # ⚠️ 不修改 Exec 路径！
+    # Exec 路径由 pak_linyaps.sh 在构建时通过 wrapper 机制自动处理
+    # 提前修改 Exec 会导致 wrapper 机制失效
+    # 
+    # wrapper 机制会：
+    # 1. 从 desktop 文件自动提取 binary_name
+    # 2. 创建 wrapper 脚本 (bin/${binary_name}.wrapper)
+    # 3. 自动更新 linglong.yaml 的 command 字段
+    # 4. 自动更新 desktop 文件的 Exec 字段
     
     with open(desktop_path, 'w') as f:
         f.write(content)
 ```
 
-**注意：**
-- desktop文件的Exec字段必须使用相对路径（如 `Exec=code %F`）
-- 二进制文件由 `pak_linyaps.sh` 在构建时软链到 `${prefix}/bin/`
-- `linglong.yaml` 的 `command` 字段也应使用相对路径（如 `command: ["code"]`）
+**⚠️ 重要警告：**
+- **只修复 Icon 路径**，将绝对路径改为相对路径
+- **禁止修改 Exec 路径**，Exec 字段由 `pak_linyaps.sh` 在构建时通过 wrapper 机制自动处理
+- **提前修改 Exec 会导致 wrapper 机制失效**，导致应用无法正确启动
+- `linglong.yaml` 的 `command` 字段也由 wrapper 机制自动设置，不要手动修改
 
 ### 5. 验证资源合规性
 
@@ -215,8 +224,29 @@ python3 common-data-verify.py <files_res_dir> --json --output report.json
 
 ## 注意事项
 
-1. desktop文件必须修复Icon和Exec为相对路径
+1. **desktop文件只修复Icon路径**，禁止修改 Exec 路径（由 wrapper 机制处理）
 2. 图标目录结构必须符合hicolor规范
 3. appdata文件重命名为 `{package_id}.appdata.xml`
 4. 验证失败时记录问题，等待修复skill处理
 5. 保留原始文件权限和符号链接
+
+## ⚠️ Agent 注意事项
+
+**LLM Agent 在执行资源收集时必须遵守以下规则：**
+
+1. **禁止修改 Exec 字段**：desktop 文件的 Exec 字段由 `pak_linyaps.sh` 在构建时通过 wrapper 机制自动处理
+2. **禁止修改 command 字段**：linglong.yaml 的 command 字段由 `pak_linyaps.sh` 在构建时通过 wrapper 机制自动设置
+3. **只修复 Icon 路径**：将 Icon 的绝对路径改为相对路径
+4. **不要提前优化**：wrapper 机制需要原始的 Exec 路径来正确提取 binary_name
+
+**wrapper 机制工作流程**（由 `pak_linyaps.sh` 在构建时执行）：
+1. 从 desktop 文件自动提取 `binary_name`
+2. 在 `binary/` 目录下查找实际二进制文件
+3. 创建 wrapper 脚本（`bin/${binary_name}.wrapper`）
+4. 自动更新 `linglong.yaml` 的 `command` 字段为 wrapper 路径
+5. 自动更新 desktop 文件的 `Exec=` 字段为 wrapper 路径
+
+**提前修改 Exec 的后果**：
+- wrapper 机制无法正确提取 binary_name
+- 导致 wrapper 脚本创建失败
+- 应用无法正确启动

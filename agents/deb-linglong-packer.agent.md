@@ -29,11 +29,39 @@ permission:
 
 ## 约束条件
 
+### 基础约束
+
 - **DO NOT** 跳过验证步骤直接生成工程
 - **DO NOT** 在用户未确认的情况下覆盖已有工程
 - **DO NOT** 忽略兼容性检测失败继续处理
 - **ONLY** 处理deb包到玲珑打包的转换工作
 - **WARNING** 若用户没有指定临时缓存目录，则默认所有临时缓存目录放置到当前工程目录而不是/tmp
+
+### Desktop/Command 处理约束
+
+- **DO NOT** 在资源收集阶段修改 desktop 文件的 Exec 字段（由 pak_linyaps.sh 的 wrapper 机制处理）
+- **DO NOT** 手动设置 linglong.yaml 的 command 字段（由 pak_linyaps.sh 的 wrapper 机制处理）
+- **LET** pak_linyaps.sh 脚本通过 wrapper 机制自动处理 Exec 和 command
+
+### pak_linyaps.sh 生成约束（重要！）
+
+- **DO NOT** 简化或删除 `pak_linyaps.sh` 中的脚本调用
+  - 必须保留 `dedup_desktop_files.sh` 调用（desktop 文件去重）
+  - 必须保留 `validate_bin_nesting.sh` 调用（bin 目录嵌套验证）
+  - 必须保留 `handle_special_paths.sh` 调用（特殊路径处理）
+
+- **DO NOT** 在 `pak_linyaps.sh` 的 envsubst 阶段导出或填充 `command` 变量
+  - `command` 必须由 wrapper 机制在构建时动态设置
+  - 模板中 `command: ""` 是正确的，不要用 envsubst 替换
+
+- **DO NOT** 使用错误的模板路径
+  - `linglong.yaml` 源文件：使用 `templates/linglong.yaml`
+  - `files_res` 源目录：使用 `templates/files_res`
+
+- **REQUIRE** `pak_linyaps.sh` 必须完整复制模板内容
+  - 不得删除任何函数或脚本调用
+  - 不得简化 wrapper 生成逻辑
+  - 不得跳过 desktop 文件去重和 bin 目录验证
 
 ## 默认设定
 - 若未指定base，则默认使用`org.deepin.base/25.2.2`
@@ -232,14 +260,30 @@ done
 - **注意**: 工程目录不包含deb源文件，deb路径由用户执行脚本时指定
 - **输出**: 工程目录路径
 
+**⚠️ 重要约束**：
+- `pak_linyaps.sh` 必须从 `skills/linglong-project-gen/templates/pak_linyaps.sh` **完整复制**
+- **禁止简化**脚本内容，包括删除脚本调用或合并函数
+- `linglong.yaml` 的 `command` 字段在模板中为空字符串 `""`，由 `pak_linyaps.sh` 在构建时通过 wrapper 机制动态设置
+- **禁止**在 envsubst 阶段导出 `command` 变量
+- 模板文件路径：`templates/linglong.yaml`、`templates/files_res`
+
 #### Step 3: 资源收集
 调用 `resource-collector` skill：
 - 从deb解压目录提取资源
 - 整理desktop、icons、appdata等
-- **修复desktop文件路径**（将绝对路径改为相对路径）
+- **修复desktop文件Icon路径**（将绝对路径改为相对路径）
+- **⚠️ 禁止修改 Exec 路径**：Exec 字段由 `pak_linyaps.sh` 在构建时通过 wrapper 机制自动处理
 - 验证资源合规性
 - **暂停**: 展示收集的资源，等待用户确认
 - **输出**: files_res目录结构
+
+**重要说明**：desktop 文件的 Exec 字段和 linglong.yaml 的 command 字段由 `pak_linyaps.sh` 脚本在构建时通过 wrapper 机制自动处理。wrapper 机制会：
+1. 从 desktop 文件自动提取 `binary_name`
+2. 创建 wrapper 脚本（`bin/${binary_name}.wrapper`）
+3. 自动更新 `linglong.yaml` 的 `command` 字段为 wrapper 路径
+4. 自动更新 desktop 文件的 `Exec=` 字段为 wrapper 路径
+
+**提前修改 Exec 会导致 wrapper 机制失效**，因此资源收集阶段只修复 Icon 路径。
 
 #### Step 4: 项目结构验证
 调用 `project-structure-validator` skill：
