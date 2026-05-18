@@ -283,8 +283,49 @@ A: 在CSV中为同一包名指定多行，每行一个架构。
 4. **失败处理**: 遇到失败会暂停询问用户选择
 5. **日志保存**: 所有测试日志保存在 `reports/` 目录
 
+## 白名单配置
+
+本工具支持 base/runtime 组合的白名单验证，确保只使用经过验证的合规组合。
+
+### 白名单配置文件位置
+
+| 级别 | 路径 | 说明 |
+|-----|------|------|
+| 全局（推荐） | `skills/config/base_runtime_whitelist.conf` | 所有 skill 和工程共享的权威来源 |
+| Skill 级别 | `skills/linglong-project-gen/config/base_runtime_whitelist.conf` | 本地副本，生成工程时同步 |
+| 工程级别 | `CI_ll_<package_id>/config/base_runtime_whitelist.conf` | 工程私有配置 |
+
+### 白名单查找优先级
+
+1. CLI 参数 `--whitelist` 指定的路径
+2. 环境变量 `LINGLONG_WHITELIST_FILE` 指定的路径
+3. 工程目录下 `config/base_runtime_whitelist.conf`
+4. 脚本所在目录的 `config/base_runtime_whitelist.conf`（skill 级别）
+5. `skills/config/base_runtime_whitelist.conf`（全局）⭐
+
+### 白名单配置文件格式
+
+```
+# 格式：<base_id>/<base_version> <runtime_id>/<runtime_version> <描述>
+org.deepin.base/25.2.2	org.deepin.runtime.dtk/25.2.2	Qt6/DTK6 应用（推荐默认）
+org.deepin.base/25.2.2	org.deepin.runtime.webengine/25.2.2	Qt6 WebEngine 应用
+org.deepin.base/25.2.2	-	纯 base 应用（无 runtime）
+```
+
+### 验证脚本
+
+```bash
+# 验证工程的 base/runtime 配置
+./skills/linglong-project-gen/scripts/validate_base_runtime.sh CI_ll_com.example.app
+
+# 自动修复模式
+./skills/linglong-project-gen/scripts/validate_base_runtime.sh CI_ll_com.example.app --fix
+```
+
 ## 相关文档
 
 - [deb_to_linglong 工具说明](../docs/deb_to_linglong.README.md)
 - [common-data-verify 工具说明](../docs/common-data-verify.README.md)
 - [validate_linglong_yaml 工具说明](../docs/validate_linglong_yaml.README.md)
+- [白名单配置文件](../skills/config/base_runtime_whitelist.conf)
+- [Base/Runtime 验证脚本](../skills/linglong-project-gen/scripts/validate_base_runtime.sh)
