@@ -1,38 +1,53 @@
-# Deb Linglong Packer - OpenCode 使用指南
+# Deb Linglong Packer - 多客戶端使用指南
 
 ## 概述
 
-`deb-linglong-packer` 是一个专为 OpenCode 设计的子代理（Subagent），用于批量将 Debian 软件包转换为玲珑（Linglong）打包工程。
+`deb-linglong-packer` 是一个智能代理（Agent），用于批量将 Debian 软件包转换为玲珑（Linglong）打包工程。支持 OpenCode、Claude Code、Cline 等多种客户端环境。
 
 ## 安装配置
 
-### 1. 复制 Agent 文件
+### 方式一：OpenCode（推荐）
+
+#### 1. 复制 Agent 文件
 
 将 `deb-linglong-packer.agent.md` 复制到 OpenCode 的 agents 目录：
 
 ```bash
 # 项目级配置
-cp .agents/agents/deb-linglong-packer.agent.md .opencode/agents/deb-linglong-packer.md
+mkdir -p .opencode/agents
+cp agents/deb-linglong-packer.agent.md .opencode/agents/deb-linglong-packer.md
 
 # 或全局配置
-cp .agents/agents/deb-linglong-packer.agent.md ~/.config/opencode/agents/deb-linglong-packer.md
+mkdir -p ~/.config/opencode/agents
+cp agents/deb-linglong-packer.agent.md ~/.config/opencode/agents/deb-linglong-packer.md
 ```
 
-### 2. 复制 Skills 文件
+#### 2. 复制 Skills 文件
 
 将所需的 skills 复制到对应目录：
 
 ```bash
 # 项目级 skills
 mkdir -p .opencode/skills
-cp -r .agents/skills/deb-analysis    .opencode/skills/
-cp -r .agents/skills/linglong-project-gen .opencode/skills/
-cp -r .agents/skills/resource-collector .opencode/skills/
-cp -r .agents/skills/compat-testing   .opencode/skills/
-cp -r .agents/skills/linglong-fix      .opencode/skills/
+cp -r skills/deb-analysis           .opencode/skills/
+cp -r skills/linglong-project-gen   .opencode/skills/
+cp -r skills/resource-collector     .opencode/skills/
+cp -r skills/compat-testing         .opencode/skills/
+cp -r skills/linglong-fix           .opencode/skills/
+cp -r skills/project-structure-validator .opencode/skills/
 ```
 
-### 3. 目录结构
+#### 3. 确认 skill 工具已启用
+
+> **重要**：Agent 的 YAML frontmatter 中必须包含 `skill: true` 才能使用 OpenCode 内建的 skill 工具。
+> 当前版本的 `deb-linglong-packer.agent.md` 已默认启用，无需手动修改。
+>
+> 如果遇到 "Skill not found. Available skills: none" 错误，请检查：
+> 1. Agent frontmatter 中 `tools:` 是否包含 `skill: true`
+> 2. Skills 是否已复制到 `.opencode/skills/` 目录
+> 3. 每个 skill 目录下是否有 `SKILL.md` 文件
+
+#### 4. 目录结构
 
 最终结构应如下：
 
@@ -42,21 +57,55 @@ cp -r .agents/skills/linglong-fix      .opencode/skills/
 │   ├── agents/
 │   │   └── deb-linglong-packer.md    # Agent 定义
 │   └── skills/
-│   │   ├── deb-analysis/
-│   │   │   └── SKILL.md
-│   │   ├── linglong-project-gen/
-│   │   │   └── SKILL.md
-│   │   ├── resource-collector/
-│   │   │   └── SKILL.md
-│   │   ├── compat-testing/
-│   │   │   └── SKILL.md
-│   │   └── linglong-fix/
-│   │       └── SKILL.md
+│       ├── deb-analysis/
+│       │   └── SKILL.md
+│       ├── linglong-project-gen/
+│       │   └── SKILL.md
+│       ├── resource-collector/
+│       │   └── SKILL.md
+│       ├── compat-testing/
+│       │   └── SKILL.md
+│       ├── linglong-fix/
+│       │   └── SKILL.md
+│       └── project-structure-validator/
+│           └── SKILL.md
 ```
+
+### 方式二：Claude Code
+
+```bash
+# 复制 skills 到 .claude/skills/
+mkdir -p .claude/skills
+cp -r skills/deb-analysis           .claude/skills/
+cp -r skills/linglong-project-gen   .claude/skills/
+cp -r skills/resource-collector     .claude/skills/
+cp -r skills/compat-testing         .claude/skills/
+cp -r skills/linglong-fix           .claude/skills/
+cp -r skills/project-structure-validator .claude/skills/
+```
+
+> **注意**：Claude Code 没有内建的 `skill` 工具，Agent 会直接读取 `SKILL.md` 文件内容作为指令。
+
+### 方式三：Cline
+
+```bash
+# 复制 skills 到 .clinerules/skills/ 或 .agents/skills/
+mkdir -p .agents/skills
+cp -r skills/deb-analysis           .agents/skills/
+cp -r skills/linglong-project-gen   .agents/skills/
+cp -r skills/resource-collector     .agents/skills/
+cp -r skills/compat-testing         .agents/skills/
+cp -r skills/linglong-fix           .agents/skills/
+cp -r skills/project-structure-validator .agents/skills/
+```
+
+> **注意**：Cline 没有内建的 `skill` 工具，Agent 会直接读取 `SKILL.md` 文件内容作为指令。
 
 ## 使用方法
 
-### 方式一：@提及调用
+### OpenCode 环境
+
+#### 方式一：@提及调用
 
 在 OpenCode 中直接 @提及 agent：
 
