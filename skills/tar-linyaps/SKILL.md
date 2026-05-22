@@ -260,8 +260,13 @@ build: |
 2. **Icon 嚴格驗證**：從 desktop Icon 欄位提取，支持 URL 導入，無有效 icon 時終止
 3. **Wrapper 機制**：Exec 和 command 由 pak_linyaps.sh 在構建時自動處理
 4. **源碼包檢測**：發現 CMakeLists.txt/Makefile 等時明確終止並提示
-5. **禁止手動修改 Exec**：資源收集階段不得修改 desktop Exec 欄位
-6. **禁止干預 ll-builder 構建**：SKILL 層面（Step 1-7）只負責資源收集和工程準備，不得在 SKILL 執行過程中調用 `ll-builder` 或修改構建流程
+5. **🚫 禁止手動修改 Exec（嚴格）**：
+   - 資源收集階段（Step 4/6/7）**絕對禁止**修改 desktop 文件的 `Exec=` 欄位
+   - **絕對禁止**手動創建 bash wrapper 腳本或將 Exec 替換為 bash 路徑
+   - **絕對禁止**在工程目錄中手動生成任何 `.sh` wrapper 文件
+   - Exec 的修改**只能**由 `pak_linyaps.sh` 的 wrapper 機制在構建時自動完成
+   - 如果發現 Exec 需要修改，**不要動手**，讓 pak_linyaps.sh 處理
+6. **🚫 禁止干預 ll-builder 構建**：SKILL 層面（Step 1-7）只負責資源收集和工程準備，不得在 SKILL 執行過程中調用 `ll-builder` 或修改構建流程
 7. **pak_linyaps.sh 是完整構建腳本**：用戶執行 `bash pak_linyaps.sh --src_path ... --package_id ...` 後，腳本自動完成從解壓到 .layer 導出的全部流程，無需手動干預
 8. **構建環境隔離**：`build_tmp_dir` 作為構建沙箱，所有中間產物在其中生成，構建完成後可自動清理
 
