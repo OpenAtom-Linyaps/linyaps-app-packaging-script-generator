@@ -487,10 +487,10 @@ process_usr_paths() {
 process_non_standard_paths() {
 	log_info "处理非标准路径..."
 
-	# 动态遍历 SRC_DIR 下的所有顶层目录
-	for top_dir in "${SRC_DIR}"/*; do
-		if [ -d "${top_dir}" ]; then
-			dir_name=$(basename "${top_dir}")
+	# 动态遍历 SRC_DIR 下的所有顶层项（目录和文件）
+	for top_item in "${SRC_DIR}"/*; do
+		if [ -d "${top_item}" ]; then
+			dir_name=$(basename "${top_item}")
 
 			# 跳过 usr 目录（由 process_usr_paths 处理）
 			# 跳过 linyaps 规范目录（bin, lib, share, sbin, libexec, lib64）
@@ -504,21 +504,78 @@ process_non_standard_paths() {
 			usr)
 				continue
 				;;
-			opt | var | srv)
-				log_info "处理 /${dir_name}/ 目录..."
-				process_non_usr_subdirs "${top_dir}"
+			opt | var | srv | etc)
+				# FHS 规则目录：剥离前缀，展平一层
+				# 例如 /opt/uTools/ → binary/uTools/
+				log_info "处理 FHS 目录 /${dir_name}/ (剥离前缀，展平一层)..."
+				process_non_usr_subdirs "${top_item}"
 				;;
 			*)
-				# 其他目录也进行处理（如 etc 等）
-				log_info "处理 /${dir_name}/ 目录..."
-				process_non_usr_subdirs "${top_dir}"
+				# 非规则目录（如 app/、data/ 等）：完整复制为子目录，不展平
+				# 例如 app/ → binary/app/
+				log_info "处理非规则目录: ${dir_name}/ (完整复制为子目录)..."
+				local normalized_dir=$(normalize_dirname "${dir_name}")
+
+				# 记录目录映射
+				if [ "${dir_name}" != "${normalized_dir}" ]; then
+					record_path_mapping "dir:${dir_name}" "dir:${normalized_dir}"
+					((STAT_NORMALIZED_DIRS++)) || true
+				fi
+
+				# 检查目标目录是否已存在（路径冲突检测）
+				if [ -d "${DEST_DIR}/${normalized_dir}" ]; then
+					log_warning "目标目录已存在，将合并内容: ${normalized_dir}"
+					((STAT_WARNINGS++)) || true
+				fi
+
+				# 使用标准化复制函数将整个目录完整复制到目标
+				copy_dir_with_normalization "${top_item}" "${DEST_DIR}/${normalized_dir}"
+				log_info "  复制完成(非规则目录): ${dir_name}/ -> ${normalized_dir}/"
+				((STAT_COPIED_DIRS++)) || true
 				;;
 			esac
+		elif [ -e "${top_item}" ] || [ -L "${top_item}" ]; then
+			# 处理顶层文件和符号链接（如 .desktop 文件、可执行文件等）
+			local file_name=$(basename "${top_item}")
+
+			# 跳过隐藏文件
+			case "${file_name}" in
+			.*)
+				continue
+				;;
+			esac
+
+			log_info "  处理顶层文件: ${file_name}"
+
+			# 标准化文件名
+			local normalized_name=$(normalize_filename "${file_name}")
+
+			# 记录文件映射
+			record_path_mapping "file:${file_name}" "file:${normalized_name}"
+
+			# 检查目标是否已存在
+			if [ -e "${DEST_DIR}/${normalized_name}" ] || [ -L "${DEST_DIR}/${normalized_name}" ]; then
+				log_warning "目标文件已存在，将覆盖: ${normalized_name}"
+				((STAT_WARNINGS++)) || true
+			fi
+
+			# 复制文件并保留所有属性（包括符号链接）
+			if cp -a "${top_item}" "${DEST_DIR}/${normalized_name}" 2>/dev/null; then
+				((STAT_COPIED_FILES++)) || true
+				if [ -L "${top_item}" ]; then
+					local link_target=$(readlink "${top_item}")
+					log_info "  保留软链: ${file_name} -> ${link_target}"
+				fi
+				log_info "  复制完成(顶层文件): ${file_name} -> ${normalized_name}"
+			else
+				log_error "复制失败(顶层文件): ${top_item} -> ${DEST_DIR}/${normalized_name}"
+				((STAT_ERRORS++)) || true
+			fi
 		fi
 	done
 }
 
-# 处理非 /usr/ 目录的子目录
+# 处理非 /usr/ 目录的子目录和文件
 process_non_usr_subdirs() {
 	local parent_dir="$1"
 
@@ -572,6 +629,63 @@ process_non_usr_subdirs() {
 
 			log_info "  复制完成: ${original_name} -> ${normalized_name}"
 			((STAT_COPIED_DIRS++)) || true
+		elif [ -e "${subdir}" ] || [ -L "${subdir}" ]; then
+			# 处理非目录项：文件、符号链接等
+			original_name=$(basename "${subdir}")
+
+			# 检查是否包含需要处理的字符并记录日志
+			if [[ "${original_name}" =~ [[:space:]] ]]; then
+				log_warning "检测到空格字符(文件): ${original_name}"
+				((STAT_WARNINGS++)) || true
+			fi
+			if [[ "${original_name}" =~ , ]]; then
+				log_warning "检测到逗号字符(文件): ${original_name}"
+				((STAT_WARNINGS++)) || true
+			fi
+			if [[ "${original_name}" =~ [()\[\]] ]]; then
+				log_warning "检测到括号字符(文件): ${original_name}"
+				((STAT_WARNINGS++)) || true
+			fi
+			if echo "${original_name}" | grep -q '[&@#$]'; then
+				log_warning "检测到特殊符号(文件): ${original_name}"
+				((STAT_WARNINGS++)) || true
+			fi
+			if [[ "${original_name}" =~ ^- ]]; then
+				log_warning "检测到以连字符开头的文件名: ${original_name}"
+				((STAT_WARNINGS++)) || true
+			fi
+			if [[ "${original_name}" == *[![:ascii:]]* ]]; then
+				log_warning "检测到非ASCII字符(文件): ${original_name}"
+				((STAT_WARNINGS++)) || true
+			fi
+
+			log_info "  处理文件: ${original_name}"
+
+			# 标准化文件名
+			normalized_name=$(normalize_filename "${original_name}")
+
+			# 记录文件映射
+			record_path_mapping "file:${original_name}" "file:${normalized_name}"
+
+			# 检查目标是否已存在（路径冲突检测）
+			if [ -e "${DEST_DIR}/${normalized_name}" ] || [ -L "${DEST_DIR}/${normalized_name}" ]; then
+				log_warning "目标文件已存在，将覆盖: ${normalized_name}"
+				((STAT_WARNINGS++)) || true
+			fi
+
+			# 复制文件并保留所有属性（包括符号链接）
+			if cp -a "${subdir}" "${DEST_DIR}/${normalized_name}" 2>/dev/null; then
+				((STAT_COPIED_FILES++)) || true
+				# 检查是否为符号链接并记录日志
+				if [ -L "${subdir}" ]; then
+					local link_target=$(readlink "${subdir}")
+					log_info "  保留软链: ${original_name} -> ${link_target}"
+				fi
+				log_info "  复制完成(文件): ${original_name} -> ${normalized_name}"
+			else
+				log_error "复制失败(文件): ${subdir} -> ${DEST_DIR}/${normalized_name}"
+				((STAT_ERRORS++)) || true
+			fi
 		fi
 	done
 }
@@ -859,10 +973,93 @@ print_statistics() {
 
 	# 显示路径映射文件位置
 	if [ -f "${PATH_MAPPING_FILE}" ]; then
-		local mapping_count=$(grep -v "^#" "${PATH_MAPPING_FILE}" | grep -c "|" 2>/dev/null || echo "0")
+		local mapping_count=$(grep -v "^#" "${PATH_MAPPING_FILE}" | grep -c "|" 2>/dev/null) || mapping_count=0
 		if [ "${mapping_count}" -gt 0 ]; then
 			log_info "路径映射文件: ${PATH_MAPPING_FILE} (${mapping_count} 个映射)"
 		fi
+	fi
+}
+
+# 检测并剥离 tar 包的单一顶层包装目录
+# 许多 tar 包解压后会产生一个顶层目录，包含所有实际内容
+# 例如: binary_tmp/Postman-with-desktop-with-icons/{app/, *.desktop, Postman}
+# 需要剥离 "Postman-with-desktop-with-icons/" 这一层
+strip_wrapper_directory() {
+	log_info "检测 tar 包包装目录..."
+
+	# 如果存在 usr/ 目录，说明是 deb 结构，不需要剥离
+	if [ -d "${SRC_DIR}/usr" ]; then
+		log_info "  检测到 deb 结构 (/usr/)，跳过包装目录剥离"
+		return 0
+	fi
+
+	# 如果顶层直接包含 linyaps 规范目录，说明已经是正确结构
+	local has_standard_dir=false
+	for std_dir in "${LINYAPS_STANDARD_DIRS[@]}"; do
+		if [ -d "${SRC_DIR}/${std_dir}" ]; then
+			has_standard_dir=true
+			break
+		fi
+	done
+	if [ "${has_standard_dir}" = "true" ]; then
+		log_info "  检测到 linyaps 规范目录结构，跳过包装目录剥离"
+		return 0
+	fi
+
+	# 统计顶层目录和文件数量
+	local top_level_count=0
+	local top_level_dir=""
+	for item in "${SRC_DIR}"/*; do
+		if [ -e "${item}" ] || [ -L "${item}" ]; then
+			((top_level_count++)) || true
+			if [ -d "${item}" ]; then
+				top_level_dir="${item}"
+			fi
+		fi
+	done
+
+	# 如果只有一个顶层项且是目录，可能是包装目录
+	if [ ${top_level_count} -eq 1 ] && [ -n "${top_level_dir}" ] && [ -d "${top_level_dir}" ]; then
+		local wrapper_name=$(basename "${top_level_dir}")
+		log_info "  检测到单一顶层包装目录: ${wrapper_name}/"
+
+		# 检查包装目录内是否有内容
+		local inner_count=0
+		for item in "${top_level_dir}"/*; do
+			if [ -e "${item}" ] || [ -L "${item}" ]; then
+				((inner_count++)) || true
+			fi
+		done
+
+		if [ ${inner_count} -eq 0 ]; then
+			log_warning "  包装目录为空，跳过剥离: ${wrapper_name}/"
+			return 0
+		fi
+
+		# 将 SRC_DIR 指向包装目录内部
+		# 使用 mv 将内容上移一层，避免后续路径处理复杂化
+		log_info "  剥离包装目录: ${wrapper_name}/ -> ${SRC_DIR}/"
+		local tmp_dir="${SRC_DIR}/._strip_tmp"
+		mv "${top_level_dir}" "${tmp_dir}"
+
+		# 将内容移到 SRC_DIR 下
+		for item in "${tmp_dir}"/*; do
+			if [ -e "${item}" ] || [ -L "${item}" ]; then
+				mv "${item}" "${SRC_DIR}/"
+			fi
+		done
+		# 处理隐藏文件（如果有）
+		for item in "${tmp_dir}"/.*; do
+			local item_name=$(basename "${item}")
+			if [ "${item_name}" != "." ] && [ "${item_name}" != ".." ] && ([ -e "${item}" ] || [ -L "${item}" ]); then
+				mv "${item}" "${SRC_DIR}/"
+			fi
+		done
+		rmdir "${tmp_dir}"
+
+		log_success "  包装目录剥离完成: ${wrapper_name}/"
+	else
+		log_info "  未检测到单一包装目录（顶层 ${top_level_count} 项），跳过剥离"
 	fi
 }
 
@@ -877,6 +1074,9 @@ main() {
 	log_info "源目录: ${SRC_DIR}"
 	log_info "目标目录: ${DEST_DIR}"
 	log_info "========================================="
+
+	# 步骤 0: 检测并剥离 tar 包包装目录
+	strip_wrapper_directory
 
 	# 步骤 1: 处理 /usr/ 标准路径
 	process_usr_paths

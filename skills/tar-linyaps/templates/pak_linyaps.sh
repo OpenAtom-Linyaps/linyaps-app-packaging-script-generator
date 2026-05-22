@@ -221,14 +221,15 @@ validate_src_path() {
 	return 0
 }
 
-# 驗證 binary_name 是否存在
+# 驗證 binary_name（若已指定則驗證存在性和可執行性）
+# 注意：binary_name 為可選參數，為空時不報錯，由 build_pak() 中的自動偵測邏輯處理
 validate_binary_name() {
 	if [ -z "${binary_name}" ]; then
-		echo "錯誤: --binary_name 參數為空" >&2
-		return 1
+		echo "提示: --binary_name 未指定，將嘗試自動偵測"
+		return 0
 	fi
 
-	local binary_path="${src_path}/${binary_name}"
+	local binary_path="${binary_dir:-${src_path}}/${binary_name}"
 	if [ ! -f "${binary_path}" ]; then
 		echo "錯誤: binary 不存在: ${binary_path}" >&2
 		return 1
@@ -243,91 +244,238 @@ validate_binary_name() {
 	return 0
 }
 
-# 創建 wrapper 腳本（從 desktop Exec 提取 binary name）
-create_wrapper_scripts() {
-	local desktop_file="$1"
-	local wrapper_dir="${project_root}/wrappers"
+# 從 desktop 文件中自動提取 binary_name
+# 核心思路：從所有 .desktop 文件的 Exec= 字段中提取二進制名稱，
+# 統計每個名稱出現次數，返回出現次數最多的作為 binary_name
+extract_binary_name_from_desktop() {
+	local search_dir="$1"
 
-	mkdir -p "${wrapper_dir}"
-
-	# 從 desktop Exec 提取 binary name
-	local exec_line=$(grep "^Exec=" "${desktop_file}" 2>/dev/null | head -1)
-	local exec_cmd="${exec_line#Exec=}"
-	# 移除參數，只保留命令
-	local main_binary=$(echo "${exec_cmd}" | awk '{print $1}')
-
-	# 創建 wrapper 腳本
-	local wrapper_path="${wrapper_dir}/${binary_name}.sh"
-	cat > "${wrapper_path}" << 'WRAPPER_EOF'
-#!/bin/bash
-# Wrapper script for binary execution
-# 由 pak_linyaps.sh 自動生成
-
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-BINARY_DIR="${SCRIPT_DIR}/../../binary"
-
-exec "${BINARY_DIR}/__BINARY_NAME__" "$@"
-WRAPPER_EOF
-
-	# 替換 __BINARY_NAME__ 為實際 binary name
-	sed -i "s/__BINARY_NAME__/${binary_name}/g" "${wrapper_path}"
-	chmod +x "${wrapper_path}"
-
-	echo "已創建 wrapper: ${wrapper_path}"
-}
-
-# 生成 linglong.yaml
-generate_linglong_yaml() {
-	local output_dir="$1"
-	local template_file="${project_root}/templates/linglong.yaml"
-
-	if [ ! -f "${template_file}" ]; then
-		echo "錯誤: 模板文件不存在: ${template_file}" >&2
+	if [ ! -d "${search_dir}" ]; then
+		echo ""
 		return 1
 	fi
 
-	# 設置默認值
-	: "${ll_version:=1.0.0}"
-	: "${ll_architecture:=amd64}"
-	: "${description:=Binary application packaged with Linglong}"
-	: "${base:=${base_id}/${base_version}}"
-	: "${runtime:=${runtime_id}/${runtime_version}}"
-	: "${extra_apt_deps:=}"
+	local names_file
+	names_file=$(mktemp)
 
-	# 計算 files_res 相對路徑
-	local files_res_rel="files_res"
-	local wrapper_script_path="./app/${binary_name}"
+	# 遍歷所有 .desktop 文件，提取 Exec= 中的二進制名稱
+	while IFS= read -r file; do
+		while IFS= read -r line; do
+			# 移除 "Exec=" 前綴
+			cmd="${line#*=}"
+			# 移除引號包裹的參數，保留第一個參數
+			cmd=$(echo "$cmd" | sed 's/"[^"]*"/""/g' | awk '{print $1}')
+			if [ -n "$cmd" ]; then
+				basename "$cmd" 2>/dev/null
+			fi
+		done < <(grep "^Exec=" "$file" 2>/dev/null)
+	done < <(find "${search_dir}" -name "*.desktop" -type f 2>/dev/null) >"$names_file"
 
-	# 使用 envsubst 替換變量
-	envsubst '${package_id} ${app_name} ${ll_version} ${ll_architecture} ${description} ${base} ${runtime} ${extra_apt_deps} ${files_res_rel} ${wrapper_script_path}' \
-		< "${template_file}" \
-		> "${output_dir}/linglong.yaml"
+	# 統計出現次數，返回最多的
+	local result
+	result=$(sort "$names_file" | uniq -c | sort -rn | head -1 | awk '{print $2}')
 
-	echo "已生成: ${output_dir}/linglong.yaml"
+	rm -f "$names_file"
+	echo "$result"
 }
 
-# 主構建流程
+# 自動偵測 binary_name（兩級 fallback）
+# 1. 優先從 desktop 文件的 Exec= 提取
+# 2. 若無 desktop，嘗試調用 scan_executables.sh 掃描
+# 返回偵測到的 binary_name（空字串表示失敗）
+auto_detect_binary_name() {
+	local search_dir="$1"
+
+	echo "--- 自動偵測 binary_name ---" >&2
+
+	# 第一級：從 desktop 文件提取
+	local detected
+	detected=$(extract_binary_name_from_desktop "${search_dir}")
+	if [ -n "${detected}" ]; then
+		echo "從 desktop Exec= 偵測到: ${detected}" >&2
+		echo "${detected}"
+		return 0
+	fi
+	echo "未找到 desktop 文件或 Exec= 為空" >&2
+
+	# 第二級：調用 scan_executables.sh 掃描
+	local scan_script="${project_root}/scripts/scan_executables.sh"
+	if [ ! -f "${scan_script}" ]; then
+		echo "警告: scan_executables.sh 不存在: ${scan_script}" >&2
+		echo ""
+		return 1
+	fi
+
+	echo "嘗試 scan_executables.sh 掃描..." >&2
+	detected=$("${scan_script}" "${search_dir}" 2>/dev/null | head -1)
+	if [ -n "${detected}" ]; then
+		echo "從可執行檔掃描偵測到: ${detected}" >&2
+		echo "${detected}"
+		return 0
+	fi
+
+	echo "錯誤: 無法自動偵測 binary_name" >&2
+	echo ""
+	return 1
+}
+
+# 從 origin_version 生成 ll_version（X.Y.Z.W 格式）
+generate_version_from_origin() {
+	local origin_ver="$1"
+
+	if [[ -z "${origin_ver}" ]]; then
+		echo "錯誤: origin_version 為空" >&2
+		return 1
+	fi
+
+	local cleaned_version="${origin_ver%%~*}"
+
+	local version_parts=()
+	local temp_version="${cleaned_version}"
+
+	while [[ "${temp_version}" =~ ([0-9]+)(.*) ]]; do
+		version_parts+=("${BASH_REMATCH[1]}")
+		temp_version="${BASH_REMATCH[2]#*[!0-9]}"
+	done
+
+	if [[ ${#version_parts[@]} -lt 2 ]]; then
+		echo "錯誤: origin_version 格式不正確，無法提取足夠的數字部分" >&2
+		return 1
+	fi
+
+	local major="${version_parts[0]:-0}"
+	local minor="${version_parts[1]:-0}"
+	local patch="${version_parts[2]:-0}"
+	local build="${version_parts[3]:-0}"
+
+	local generated_version="${major}.${minor}.${patch}.${build}"
+
+	if [[ "${generated_version}" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+		echo "${generated_version}"
+		return 0
+	else
+		echo "錯誤: 生成的版本號格式不正確: ${generated_version}" >&2
+		return 1
+	fi
+}
+
+# 版本檢查與重新組裝
+version_check_regroup() {
+	if [[ -n "${ll_version}" &&
+		"${ll_version}" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+		echo "使用已有的 ll_version=${ll_version}"
+	else
+		echo "ll_version 格式不正確或為空，嘗試使用 origin_version 生成"
+
+		local generated_version
+		if generated_version=$(generate_version_from_origin "${origin_version}"); then
+			ll_version="${generated_version}"
+			echo "使用 origin_version=${origin_version} 生成 ll_version=${ll_version}"
+		else
+			echo "無法從 origin_version 生成有效的版本號"
+			exit 1
+		fi
+	fi
+
+	echo "最終 ll_version=${ll_version}"
+}
+
+# 驗證必填字段
+validate_required_fields() {
+	if [ -z "${src_path}" ]; then
+		echo "請指定源包完整路徑 src_path" >&2
+		exit 1
+	elif [ ! -f "${src_path}" ]; then
+		echo "指定的源包文件不存在: ${src_path}" >&2
+		exit 1
+	fi
+
+	if [ -z "${output_dir}" ]; then
+		output_dir="${default_output_dir}"
+	fi
+
+	if [ ! -d "${output_dir}" ]; then
+		echo "輸出目錄不存在，嘗試創建: ${output_dir}"
+		if mkdir -p "${output_dir}"; then
+			echo "成功創建輸出目錄: ${output_dir}"
+		else
+			echo "錯誤: 無法創建輸出目錄: ${output_dir}" >&2
+			exit 1
+		fi
+	fi
+
+	if [ -z "${ll_version}" ]; then
+		echo "請單獨指定 ll_version 或提供正確的 origin_version" >&2
+		exit 1
+	fi
+
+	if [ -z "${linyaps_arch}" ]; then
+		linyaps_arch=$(uname -m)
+	fi
+}
+
+# 數據重新組裝檢查
+data_regroup_check() {
+	src_path=$(readlink -f "${src_path}")
+	output_dir=$(readlink -f "${output_dir}")
+
+	version_check_regroup
+	validate_required_fields
+}
+
+# 初始化構建目錄（與 deb 版一致的通用機制）
+# 準備構建環境：複製 files_res、腳本、生成 linglong.yaml
+build_dir_init() {
+	# 檢測錯誤的環境變量設置
+	# command 應該由 build_pak() 中的 wrapper 機制通過 sed 替換，不是 envsubst
+	if [ -n "${command:-}" ]; then
+		echo "警告: 檢測到 'command' 環境變量已設置: '${command}'" >&2
+		echo "  command 應該由 build_pak() 中的 wrapper 機制通過 sed 替換" >&2
+		echo "  如果您在 build_dir_init() 中使用了 'export command=...'，請刪除該行" >&2
+		echo "  此警告不會阻止構建，因為 sed 會覆蓋錯誤的值" >&2
+	fi
+
+	## Generate linyaps building dir
+	mkdir -p "${build_tmp_dir}/binary"
+	cd "${build_tmp_dir}"
+
+	# 注意：模板文件位於 templates/ 目錄下
+	cp -rf "${project_root}/templates/files_res" \
+		"${build_tmp_dir}"
+
+	## 複製腳本到構建目錄，供 linglong.yaml build 階段使用
+	mkdir -p "${build_tmp_dir}/scripts"
+	cp -f "${project_root}/scripts/"*.sh "${build_tmp_dir}/scripts/"
+
+	## Generate linyaps res
+	## Envs for linglong.yaml
+	## 注意：不要 export command，command 由 build_pak() 中的 wrapper 機制通過 sed 替換
+	export prefix="\$PREFIX"
+	export ll_version=${ll_version}
+	export base_id=${base_id}
+	export base_version=${base_version}
+	export runtime_id=${runtime_id}
+	export runtime_version=${runtime_version}
+	export linyaps_arch=${linyaps_arch}
+
+	# 注意：模板文件位於 templates/ 目錄下
+	cat "${project_root}/templates/linglong.yaml" |
+		envsubst >"${build_tmp_dir}/linglong.yaml"
+}
+
+# 主構建流程（與 deb 版一致的完整構建流程）
 build_pak() {
-	if ! validate_src_path; then
-		return 1
-	fi
+	## Extract the binary package
+	binary_tmp_dir="${build_tmp_dir}/tmp"
+	binary_dir="${build_tmp_dir}/binary/"
 
-	if ! validate_binary_name; then
-		return 1
-	fi
+	# 解壓 tar 包
+	tar -xf "${src_path}" "${binary_tmp_dir}/"
 
-	# 創建臨時目錄
-	local binary_tmp_dir="${build_tmp_dir}/binary_tmp"
-	local binary_dir="${build_tmp_dir}/binary"
-	local project_dir="${build_tmp_dir}/project"
-
-	mkdir -p "${binary_tmp_dir}"
+	# 創建 binary 目錄結構
+	# binary/ 目錄的內容會複製到 files/ 根目錄
+	# files/ 映射到 /usr/，所以 files/bin/ -> /usr/bin/
 	mkdir -p "${binary_dir}"
-	mkdir -p "${project_dir}"
-
-	# 解壓 tar 到臨時目錄
-	echo "解壓 tar: ${src_path}"
-	tar -xf "${src_path}" -C "${binary_tmp_dir}/"
 
 	# 調用特殊路徑處理腳本
 	# 處理 tar 中的文件路徑轉換，包括：
@@ -338,101 +486,165 @@ build_pak() {
 	# 注意：此操作必須在所有軟鏈動作之前完成，否則軟鏈關係將被破壞
 	"${project_root}/scripts/handle_special_paths.sh" "${binary_tmp_dir}" "${binary_dir}"
 
-	# 複製 templates 到項目目錄
-	cp -rf "${project_root}/templates/"* "${project_dir}/"
+	# 創建 bin/ 目錄用於存放 wrapper 腳本
+	# 注意：此操作必須在特殊路徑處理完成之後進行
+	mkdir -p "${binary_dir}/bin"
 
-	# 處理 desktop 文件
-	local desktop_file=$(find "${binary_dir}" -name "*.desktop" -type f 2>/dev/null | head -1)
-	if [ -n "${desktop_file}" ]; then
-		# 更新 desktop Exec 指向 wrapper
-		local exec_line=$(grep "^Exec=" "${desktop_file}" 2>/dev/null | head -1)
-		local exec_cmd="${exec_line#Exec=}"
-		local main_binary=$(echo "${exec_cmd}" | awk '{print $1}')
-
-		# 創建 wrapper
-		create_wrapper_scripts "${desktop_file}"
-
-		# 更新 desktop Exec 為 wrapper 路徑
-		local wrapper_name="${binary_name}.sh"
-		sed -i "s|^Exec=.*|Exec=./app/${wrapper_name}|" "${desktop_file}"
+	# 處理二進制文件：創建 wrapper 腳本
+	# 在 files/bin/ 創建 wrapper 腳本，執行實際二進制文件
+	# 注意：此操作必須在所有文件複製和路徑處理完成之後進行
+	if [ -z "${binary_name}" ]; then
+		# 未指定 binary_name 時，自動從 desktop 文件中提取
+		echo "binary_name not specified, auto-detecting from desktop files..."
+		binary_name=$(extract_binary_name_from_desktop "${binary_dir}")
+		if [ -z "${binary_name}" ]; then
+			# 第二級 fallback：調用 scan_executables.sh 掃描
+			echo "未從 desktop 偵測到 binary_name，嘗試 scan_executables.sh 掃描..."
+			local scan_script="${project_root}/scripts/scan_executables.sh"
+			if [ -f "${scan_script}" ]; then
+				binary_name=$("${scan_script}" "${binary_dir}" 2>/dev/null | head -1)
+			fi
+		fi
+		if [ -n "${binary_name}" ]; then
+			echo "Auto-detected binary_name: ${binary_name}"
+		else
+			echo "Warning: Could not auto-detect binary_name"
+		fi
 	fi
 
-	# 生成 linglong.yaml
-	generate_linglong_yaml "${project_dir}"
+	if [ -n "${binary_name}" ]; then
+		# 在 binary/ 目錄下查找二進制文件
+		actual_binary=$(find "${binary_dir}" -type f -name "${binary_name}" -executable 2>/dev/null | head -n 1)
 
-	# 複製 files_res
-	if [ -d "${project_root}/templates/files_res" ]; then
-		cp -rf "${project_root}/templates/files_res" "${project_dir}/"
+		if [ -n "${actual_binary}" ]; then
+			# 使用 readlink -f 解析實際文件路徑，處理軟鏈情況
+			real_binary=$(readlink -f "${actual_binary}")
+
+			# 計算相對於 binary/ 的路徑
+			rel_binary="${real_binary#${binary_dir}}"
+
+			# 創建 wrapper 腳本
+			# wrapper 位於 bin/ 目錄，使用相對路徑直接指向原始二進制
+			# 文件名使用 .wrapper 後綴，避免與原始二進制名衝突
+			# 注意：使用 \$@ 而非 $@，防止 envsubst 替換
+			cat >"${binary_dir}/bin/${binary_name}.wrapper" <<WRAPPER_EOF
+#!/bin/bash
+# Wrapper script generated by pak_linyaps.sh
+# 使用 cd+pwd 解析 wrapper 自身的絕對路徑，確保 \$PATH 執行時也能正確工作
+script_dir="\$(cd "\$(dirname "\$0")" && pwd)"
+exec "\${script_dir}/../${rel_binary}" "\$@"
+WRAPPER_EOF
+
+			chmod +x "${binary_dir}/bin/${binary_name}.wrapper"
+			echo "Created wrapper script: bin/${binary_name}.wrapper -> ../${rel_binary}"
+			echo "  (wrapper resolves absolute path first, then uses relative path)"
+
+			# 更新 linglong.yaml 的 command 字段
+			# 將 command 設置為 wrapper 腳本路徑（數組格式，ll-builder 要求）
+			if [ -f "${build_tmp_dir}/linglong.yaml" ]; then
+				# 1. 刪除 command 後可能存在的舊列表項
+				sed -i '/^\s*command:/{n;/^\s*-\s*/d}' "${build_tmp_dir}/linglong.yaml"
+				# 2. 替換 command 行
+				sed -i "s|^\s*command:.*|command:|" "${build_tmp_dir}/linglong.yaml"
+				# 3. 在 command 行後追加列表項（YAML 數組格式）
+				sed -i '/^\s*command:/a\  - '"${binary_name}"'.wrapper' "${build_tmp_dir}/linglong.yaml"
+				echo "Updated linglong.yaml command to array format: [${binary_name}.wrapper]"
+			fi
+
+			# 更新 desktop 文件的 Exec= 字段
+			# 將 Exec= 中的二進制路徑替換為 wrapper 路徑
+			# 處理 files_res/ 和 binary/ 中的所有 desktop 文件
+			for desktop_file in $(find "${build_tmp_dir}" -name "*.desktop" -type f 2>/dev/null); do
+				if grep -q "Exec=.*${binary_name}" "${desktop_file}"; then
+					# 替換 Exec= 行中的二進制路徑為 wrapper 路徑
+					# 保留 Exec= 後的參數（如 %F, %U 等）
+					sed -i "s|Exec=[^ ]*${binary_name}[^ ]*|Exec=/opt/apps/${ll_id}/files/bin/${binary_name}.wrapper|g" "${desktop_file}"
+					echo "Updated Exec= in: ${desktop_file}"
+				fi
+			done
+		else
+			echo "Warning: Binary '${binary_name}' not found in ${binary_dir}"
+		fi
 	fi
 
-	# 移動 desktop 文件到 files_res
-	if [ -n "${desktop_file}" ] && [ -f "${desktop_file}" ]; then
-		mkdir -p "${project_dir}/files_res/share/applications"
-		cp "${desktop_file}" "${project_dir}/files_res/share/applications/"
+	# 第一步去重：刪除 binary/ 中與 files_res/ 內容重複的 desktop 文件
+	# 在 ll-builder build 之前執行，避免重複文件進入最終包
+	# 參數說明：
+	#   - 第一個參數：待去重的目標目錄 (binary/)
+	#   - --reference-dir：參考目錄 (files_res/)
+	# 效果：刪除 binary/ 中與 files_res/ 內容相同的 desktop 文件
+	"${project_root}/scripts/dedup_desktop_files.sh" "${build_tmp_dir}/binary" --reference-dir "${build_tmp_dir}/files_res"
+
+	# 第二步去重：對 files_res/ 內部的 desktop 文件進行去重（保底檢測）
+	# 避免相同內容的 desktop 文件重複打包
+	"${project_root}/scripts/dedup_desktop_files.sh" "${build_tmp_dir}/files_res"
+
+	# 驗證並修復嵌套 bin/ 路徑問題
+	# 檢測 binary/bin/bin/ 嵌套問題並自動修復
+	"${project_root}/scripts/validate_bin_nesting.sh" "${binary_dir}" --fix
+
+	# 創建玲瓏構建標識文件
+	# binary/ 目錄對應 linglong.yaml 中的 ${prefix}
+	# 此文件用於標識由 linyaps 系統生成的構建產物
+	touch "${binary_dir}/.linyaps_genius"
+	echo "Created identity file: ${binary_dir}/.linyaps_genius"
+
+	## Building & Exporting
+	ll-builder build --skip-output-check
+	building_status=$?
+	if [ "${building_status}" = "0" ]; then
+		echo "Building success ! "
+	else
+		echo "Building failed ! "
+		exit 1
 	fi
+	ll-builder export --no-develop --layer
 
-	# 輸出
-	if [ -z "${output_dir}" ]; then
-		output_dir="${default_output_dir}"
+	## Check layers
+	binary_layer=$(find "${build_tmp_dir}" -type f \
+		-name "*binary.layer")
+	if [ -z ${binary_layer} ]; then
+		echo "Failed to build paks !"
+		exit 1
+	else
+		mv "${binary_layer}" "${output_dir}"
 	fi
-	mkdir -p "${output_dir}"
-
-	local final_project_dir="${output_dir}/CI_ll_${package_id}"
-	rm -rf "${final_project_dir}"
-	mv "${project_dir}" "${final_project_dir}"
-
-	echo "構建完成: ${final_project_dir}"
-	echo "下一步: cd ${final_project_dir} && bash pak_linyaps.sh"
 }
 
-# 顯示幫助
-show_help() {
-	cat << 'HELP_EOF'
-用法: pak_linyaps.sh [選項]
-
-必填選項:
-  --src_path <路徑>           tar 歸檔解压根目
-  --package_id <ID>          玲瓏包 ID (如 com.example.app)
-  --binary_name <名稱>       可執行檔案名
-
-可選選項:
-  --app_name <名稱>          應用顯示名稱
-  --app_version <版本>       應用版本
-  --icon_path <路徑>         icon 檔案路徑
-  --ll_version <版本>        玲瓏包版本 (默認 1.0.0)
-  --ll_architecture <架構>   目標架構 (amd64/arm64, 默認 amd64)
-  --base_id <ID>             基礎运行时 ID (默認 org.deepin.base)
-  --base_version <版本>      基礎運行時版本 (默認 25.2.2)
-  --runtime_id <ID>          應用運行時 ID (默認 org.deepin.runtime.dtk)
-  --runtime_version <版本>   應用運行時版本 (默認 25.2.2)
-  --whitelist <路徑>         base/runtime 白名單配置文件
-  --output_dir <路徑>        輸出目錄 (默認 ./bins)
-  --build_tmp_dir <路徑>     構建緩存目錄
-
-示例:
-  pak_linyaps.sh \
-    --src_path /tmp/app-extract \
-    --package_id com.example.app \
-    --binary_name myapp \
-    --app_name "My Application" \
-    --ll_version 1.0.0
-HELP_EOF
+push_dev() {
+	## Check data
+	export LINGLONG_USERNAME="${LINGLONG_USERNAME:-$push_account_user}"
+	export LINGLONG_PASSWORD="${LINGLONG_PASSWORD:-$push_account_passwd}"
+	for data in repo_name repo_url LINGLONG_USERNAME LINGLONG_PASSWORD; do
+		if [ -z "${!data}" ]; then
+			echo "Error: Required '$data' is missing"
+			exit 1
+		fi
+	done
+	## Push
+	cd "${build_tmp_dir}"
+	ll-builder push --repo-name ${repo_name} --repo-url ${repo_url}
 }
 
-# 解析命令行參數
-parse_args() {
-	if [ $# -eq 0 ] || [ "$1" = "-h" ] || [ "$1" = "--help" ]; then
-		show_help
-		exit 0
-	fi
-
-	init_global_data "$@"
-}
-
-# 入口
 main() {
-	parse_args "$@"
+	init_global_data "$@"
+	data_regroup_check
+	build_dir_init
 	build_pak
+
+	## Auto push
+	if [[ -n "${auto_push}" && ("${auto_push}" =~ ^[Tt][Rr][Uu][Ee]$ ||
+		"${auto_push}" =~ ^[Tt]$) ]]; then
+		push_dev
+	else
+		echo "Skip auto push due to empty or false value of auto_push"
+	fi
+
+	## Clean up
+	if [ -z "${auto_clean}" ] || [ "${auto_clean}" = "TRUE" ] || [ "${auto_clean}" = "true" ]; then
+		rm -rf "${build_tmp_dir}"
+	fi
 }
 
 main "$@"
+exit 0
