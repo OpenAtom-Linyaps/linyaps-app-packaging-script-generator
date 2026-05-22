@@ -470,7 +470,10 @@ build_pak() {
 	binary_dir="${build_tmp_dir}/binary/"
 
 	# 解壓 tar 包
-	tar -xf "${src_path}" "${binary_tmp_dir}/"
+	# 注意：必須使用 -C 選項指定解壓目標目錄
+	# 錯誤寫法：tar -xf "${src_path}" "${binary_tmp_dir}/"（會把路徑當作歸檔內文件名）
+	mkdir -p "${binary_tmp_dir}"
+	tar -xf "${src_path}" -C "${binary_tmp_dir}"
 
 	# 創建 binary 目錄結構
 	# binary/ 目錄的內容會複製到 files/ 根目錄
