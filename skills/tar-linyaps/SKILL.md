@@ -195,9 +195,62 @@ fi
 | Step 4: Desktop 掃描 | tar-linyaps skill | 提取 Exec= binary name（優先級高於自動掃描） |
 | Step 5: 自動掃描 | tar-linyaps skill | 僅在無 desktop Exec 時掃描可執行檔 |
 | Step 4/5: 資源收集 | tar-linyaps skill | 只修復 Icon 路徑，**不修改** Exec 欄位 |
-| 構建時 | pak_linyaps.sh | 創建 wrapper 腳本 |
-| 構建時 | pak_linyaps.sh | 更新 linglong.yaml 的 command |
-| 構建時 | pak_linyaps.sh | 更新 desktop 的 Exec |
+| Step 7: 工程生成 | tar-linyaps skill | 準備 templates/、scripts/、config/ 目錄結構 |
+| 構建時 | pak_linyaps.sh | 創建 wrapper 腳本（binary/bin/*.wrapper） |
+| 構建時 | pak_linyaps.sh | 更新 linglong.yaml 的 command（sed 替換為數組格式） |
+| 構建時 | pak_linyaps.sh | 更新 desktop 的 Exec（替換為 wrapper 絕對路徑） |
+| 構建時 | pak_linyaps.sh | Desktop 文件去重（dedup_desktop_files.sh 兩步去重） |
+| 構建時 | pak_linyaps.sh | 嵌套 bin/ 路徑驗證（validate_bin_nesting.sh） |
+| 構建時 | pak_linyaps.sh | **ll-builder build** — 實際構建玲瓏包 |
+| 構建時 | pak_linyaps.sh | **ll-builder export** — 導出 .layer 文件到 output_dir |
+| 構建時 | pak_linyaps.sh | 可選 ll-builder push（auto_push=true 時） |
+
+---
+
+## pak_linyaps.sh 構建流程
+
+`pak_linyaps.sh` 是**完整構建腳本**（非僅工程目錄生成器），與 deb 版構建流程完全一致。
+
+### 完整流程
+
+```
+main()
+  ├─ init_global_data()        # 解析命令行參數
+  ├─ data_regroup_check()      # 驗證 src_path、版本處理、輸出目錄
+  ├─ build_dir_init()          # 準備構建環境
+  │   ├─ 複製 files_res/ 到 build_tmp_dir
+  │   ├─ 複製 scripts/*.sh 到 build_tmp_dir/scripts/
+  │   └─ envsubst 生成 linglong.yaml
+  ├─ build_pak()               # 核心構建
+  │   ├─ tar -xf 解壓
+  │   ├─ handle_special_paths.sh 路徑轉換
+  │   ├─ 自動偵測 binary_name（desktop → scan_executables.sh）
+  │   ├─ 創建 wrapper 腳本（binary/bin/*.wrapper）
+  │   ├─ 更新 linglong.yaml command + desktop Exec
+  │   ├─ dedup_desktop_files.sh 兩步去重
+  │   ├─ validate_bin_nesting.sh 嵌套 bin/ 驗證
+  │   ├─ 創建 .linyaps_genius 標識文件
+  │   ├─ ll-builder build --skip-output-check
+  │   ├─ ll-builder export --no-develop --layer
+  │   └─ 移動 *.layer 到 output_dir
+  ├─ push_dev() [可選]         # ll-builder push 到倉庫
+  └─ 清理 build_tmp_dir
+```
+
+### 構建輸出
+
+- **成功**：`output_dir/` 下生成 `*.binary.layer` 文件
+- **失敗**：`ll-builder build` 返回非零退出碼，腳本終止
+
+### linglong.yaml build 段
+
+模板中的 `build:` 段負責將文件複製到玲瓏容器內：
+```yaml
+build: |
+  cp -rf /project/binary/* ${prefix}/
+  cp -rf /project/files_res/* ${prefix}/
+  touch ${prefix}/.linyaps_genius
+```
 
 ---
 
@@ -208,13 +261,25 @@ fi
 3. **Wrapper 機制**：Exec 和 command 由 pak_linyaps.sh 在構建時自動處理
 4. **源碼包檢測**：發現 CMakeLists.txt/Makefile 等時明確終止並提示
 5. **禁止手動修改 Exec**：資源收集階段不得修改 desktop Exec 欄位
+6. **禁止干預 ll-builder 構建**：SKILL 層面（Step 1-7）只負責資源收集和工程準備，不得在 SKILL 執行過程中調用 `ll-builder` 或修改構建流程
+7. **pak_linyaps.sh 是完整構建腳本**：用戶執行 `bash pak_linyaps.sh --src_path ... --package_id ...` 後，腳本自動完成從解壓到 .layer 導出的全部流程，無需手動干預
+8. **構建環境隔離**：`build_tmp_dir` 作為構建沙箱，所有中間產物在其中生成，構建完成後可自動清理
 
 ---
 
 ## 依賴
 
-- `scan_executables.sh`：可執行檔掃描腳本
+### 構建腳本（scripts/）
+- `scan_executables.sh`：可執行檔掃描腳本（tar 版特有，用於無 desktop 時的自動偵測）
 - `handle_special_paths.sh`：路徑轉換腳本（處理 `/usr/`、`/opt/` 等路徑層級剝離 + 特殊字符標準化 + 軟鏈修復），與 deb 版共用
-- `linglong-project-gen` 子技能：工程生成
+- `dedup_desktop_files.sh`：Desktop 文件去重腳本（兩步去重：binary vs files_res + files_res 內部），與 deb 版共用
+- `validate_bin_nesting.sh`：嵌套 bin/ 路徑驗證腳本，與 deb 版共用
+
+### 外部工具
+- `ll-builder`：玲瓏構建工具（build + export + push）
 - `desktop-file-validate`：desktop 文件驗證工具
+- `envsubst`：環境變量替換工具（生成 linglong.yaml）
+
+### 配置文件
 - `base_runtime_whitelist.conf`：base/runtime 白名單配置
+- `templates/linglong.yaml`：玲瓏工程模板（含 build 段）

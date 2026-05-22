@@ -16,7 +16,17 @@ buildept:
   apt:
     - ${extra_apt_deps}
 
-command: "${wrapper_script_path}"
+command: ""
 
 build: |
-  echo "No build required for binary package"
+  ##Extract res
+  # files/ 映射到 /usr/ 目录
+  # binary/ 的内容直接对应 $prefix/ (files/)
+  # pak_linyaps.sh 已处理路径转换和软链
+  cp -rf /project/binary/* ${prefix}/
+
+  # 复制桌面文件、图标等资源
+  cp -rf /project/files_res/* ${prefix}/
+
+  # Add an identity for LLM
+  touch ${prefix}/.linyaps_genius
