@@ -12,10 +12,6 @@ package:
 base: ${base}
 runtime: ${runtime}
 
-buildept:
-  apt:
-    - ${extra_apt_deps}
-
 command: ""
 
 build: |

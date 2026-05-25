@@ -10,15 +10,64 @@
 convert tar, tar binary, tar package, 轉換 tar, tar 打包
 ```
 
-## 必要參數
+## 輸入方式
 
-| 參數 | 說明 | 範例 |
-|------|------|------|
-| `tar_path` | tar 歸檔路徑（必填）| `/path/to/app.tar.zst` |
-| `binary_name` | 可執行檔案名（可選）| `app.bin` |
-| `app_name` | 應用名稱（必填）| `My Application` |
-| `app_version` | 版本號（可選）| `1.0.0` |
-| `icon_url` | icon 下載 URL（可選）| `https://example.com/icon.png` |
+支持兩種參數傳遞方式（優先級：JSON 配置文件 > 交互式傳參）：
+
+### 方式一：JSON 配置文件（推薦）
+
+通過 JSON 文件一次性提供所有構建參數，由 `parse_build_config.sh` 腳本解析。
+
+```bash
+# 解析配置文件，輸出 key=value 格式
+eval "$(bash "${skill_root}/scripts/parse_build_config.sh" config.json)"
+```
+
+JSON 結構分為 `main`（必填）和 `optional`（可選）兩個分組：
+
+```json
+{
+  "main": {
+    "src_url": "https://example.com/app-1.0.0.tar.zst",
+    "app_name": "My Application",
+    "package_id": "com.example.myapp",
+    "description": "應用描述",
+    "icon_url": "https://example.com/icon.png"
+  },
+  "optional": {
+    "binary_name": "myapp",
+    "app_version": "1.0.0",
+    "base_id": "org.deepin.base",
+    "base_version": "25.2.2",
+    "runtime_id": "org.deepin.runtime.dtk",
+    "runtime_version": "25.2.2",
+    "linyaps_arch": "x86_64",
+    "output_dir": "./output"
+  }
+}
+```
+
+範例文件：`examples/build_config.example.json`
+
+### 方式二：交互式傳參
+
+直接向 Agent 提供以下參數，Agent 交互式收集：
+
+| 參數 | 說明 | 必填 | 範例 |
+|------|------|------|------|
+| `src_url` | tar 歸檔下載 URL 或本地路徑 | ✅ | `https://example.com/app.tar.zst` |
+| `app_name` | 應用名稱 | ✅ | `My Application` |
+| `package_id` | 玲瓏包 ID（反向域名格式） | ✅ | `com.example.myapp` |
+| `description` | 應用描述 | ✅ | `A sample application` |
+| `icon_url` | icon 下載 URL | ✅ | `https://example.com/icon.png` |
+| `binary_name` | 可執行檔案名 | ❌ | `app.bin` |
+| `app_version` | 版本號 | ❌ | `1.0.0` |
+| `base_id` | base 層 ID | ❌ | `org.deepin.base` |
+| `base_version` | base 層版本 | ❌ | `25.2.2` |
+| `runtime_id` | runtime 層 ID | ❌ | `org.deepin.runtime.dtk` |
+| `runtime_version` | runtime 層版本 | ❌ | `25.2.2` |
+| `linyaps_arch` | 目標架構 | ❌ | `x86_64` |
+| `output_dir` | 輸出目錄 | ❌ | `./output` |
 
 ## 工作流程
 
@@ -50,8 +99,38 @@ tar -xf "${tar_path}" -C "${extract_dir}"
 
 ### Step 3: 收集用戶參數
 
-- 若用戶提供了 `binary_name`，直接進入 Step 6
-- 若用戶未提供 `binary_name`，進入 Step 4 掃描 desktop
+#### 3a. JSON 配置文件解析（優先）
+
+若用戶提供了 JSON 配置文件（`build_config.json`），調用解析腳本載入所有參數：
+
+```bash
+# 解析 JSON 配置，輸出 key=value 格式並載入為 shell 變量
+eval "$(bash "${skill_root}/scripts/parse_build_config.sh" build_config.json)"
+
+# 載入後可直接使用以下變量：
+# 必填（來自 main）：src_url, app_name, package_id, description, icon_url
+# 可選（來自 optional）：binary_name, app_version, base_id, base_version,
+#                       runtime_id, runtime_version, linyaps_arch, output_dir
+```
+
+**解析腳本行為**：
+- 驗證 JSON 格式和頂層結構（`main` + `optional`）
+- 檢查 `main` 中所有必填欄位是否存在且非空
+- 檢測未知欄位並輸出警告
+- 驗證 URL 格式（`src_url`、`icon_url`）
+- `optional` 中未填寫的欄位自動使用默認值
+- 輸出扁平 `key=value` 格式，可直接 `eval` 載入
+
+**解析成功後**：根據 `binary_name` 是否有值決定後續流程：
+- `binary_name` 有值 → 直接進入 Step 6
+- `binary_name` 為空 → 進入 Step 4 掃描 desktop
+
+#### 3b. 交互式參數收集（備選）
+
+若用戶未提供 JSON 配置文件，Agent 交互式收集參數：
+- 確認 `src_url`、`app_name`、`package_id`、`description`、`icon_url` 等必填項
+- 詢問可選參數（使用默認值）
+- 收集完成後根據 `binary_name` 決定後續流程
 
 ### Step 4: 掃描 desktop 文件
 
@@ -275,16 +354,19 @@ build: |
 ## 依賴
 
 ### 構建腳本（scripts/）
+- `parse_build_config.sh`：JSON 配置解析腳本（解析 `build_config.json`，驗證必填欄位，輸出 `key=value` 格式）
 - `scan_executables.sh`：可執行檔掃描腳本（tar 版特有，用於無 desktop 時的自動偵測）
 - `handle_special_paths.sh`：路徑轉換腳本（處理 `/usr/`、`/opt/` 等路徑層級剝離 + 特殊字符標準化 + 軟鏈修復），與 deb 版共用
 - `dedup_desktop_files.sh`：Desktop 文件去重腳本（兩步去重：binary vs files_res + files_res 內部），與 deb 版共用
 - `validate_bin_nesting.sh`：嵌套 bin/ 路徑驗證腳本，與 deb 版共用
 
 ### 外部工具
+- `jq`：JSON 解析工具（`parse_build_config.sh` 依賴）
 - `ll-builder`：玲瓏構建工具（build + export + push）
 - `desktop-file-validate`：desktop 文件驗證工具
 - `envsubst`：環境變量替換工具（生成 linglong.yaml）
 
 ### 配置文件
+- `examples/build_config.example.json`：JSON 配置範例文件（`main`/`optional` 分組結構）
 - `base_runtime_whitelist.conf`：base/runtime 白名單配置
 - `templates/linglong.yaml`：玲瓏工程模板（含 build 段）
