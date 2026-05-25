@@ -2,8 +2,6 @@
 
 set -x
 
-ll_id="${package_id}"
-
 # 默認 base/runtime 配置（可通過命令行參數覆蓋）
 DEFAULT_BASE_ID="org.deepin.base"
 DEFAULT_BASE_VERSION="25.2.2"
@@ -623,8 +621,9 @@ WRAPPER_EOF
 			for desktop_file in $(find "${build_tmp_dir}" -name "*.desktop" -type f 2>/dev/null); do
 				if grep -q "Exec=.*${binary_name}" "${desktop_file}"; then
 					# 替换 Exec= 行中的二进制路径为 wrapper 路径
+					# wrapper 位于 bin/ 目录，直接使用二进制名称即可
 					# 保留 Exec= 后的参数（如 %F, %U 等）
-					sed -i "s|Exec=[^ ]*${binary_name}[^ ]*|Exec=/opt/apps/${ll_id}/files/bin/${binary_name}.wrapper|g" "${desktop_file}"
+					sed -i "s|Exec=[^ ]*${binary_name}[^ ]*|Exec=${binary_name}.wrapper|g" "${desktop_file}"
 					echo "Updated Exec= in: ${desktop_file}"
 				fi
 			done
