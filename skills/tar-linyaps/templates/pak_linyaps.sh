@@ -102,6 +102,9 @@ init_global_data() {
 		--app_version)
 			app_version="$val"
 			;;
+		--description)
+			description="$val"
+			;;
 		--icon_path)
 			icon_path="$val"
 			;;
@@ -449,12 +452,13 @@ build_dir_init() {
 	## Envs for linglong.yaml
 	## 注意：不要 export command，command 由 build_pak() 中的 wrapper 機制通過 sed 替換
 	export prefix="\$PREFIX"
+	export package_id="${package_id}"
+	export app_name="${app_name}"
+	export description="${description}"
 	export ll_version=${ll_version}
-	export base_id=${base_id}
-	export base_version=${base_version}
-	export runtime_id=${runtime_id}
-	export runtime_version=${runtime_version}
-	export linyaps_arch=${linyaps_arch}
+	export ll_architecture=${linyaps_arch}
+	export base="${base_id}/${base_version}"
+	export runtime="${runtime_id}/${runtime_version}"
 
 	# 注意：模板文件位於 templates/ 目錄下
 	cat "${project_root}/templates/linglong.yaml" |

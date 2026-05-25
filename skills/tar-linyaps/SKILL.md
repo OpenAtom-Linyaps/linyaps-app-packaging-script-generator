@@ -238,6 +238,11 @@ cp "${skill_root}/templates/pak_linyaps.sh" "${project_dir}/"
 chmod +x "${project_dir}/pak_linyaps.sh"
 cp "${skill_root}/templates/linglong.yaml" "${project_dir}/templates/"
 
+# 預填充已知值到模板 YAML（Step 3 已收集的靜態信息，避免佔位符殘留）
+sed -i "s|\${package_id}|${package_id}|g" "${project_dir}/templates/linglong.yaml"
+sed -i "s|\${app_name}|${app_name}|g" "${project_dir}/templates/linglong.yaml"
+sed -i "s|\${description}|${description}|g" "${project_dir}/templates/linglong.yaml"
+
 # 拷貝掃描腳本
 cp "${skill_root}/scripts/scan_executables.sh" "${project_dir}/scripts/"
 chmod +x "${project_dir}/scripts/scan_executables.sh"
