@@ -166,8 +166,28 @@ class LinglongYamlValidator:
         result.add_pass(str(self.input_file), "YAML syntax is valid")
         return result
 
+    # Fields that must not contain unresolved variable references
+    NO_VAR_FIELDS = {"package.id", "package.name", "package.description"}
+
+    def _contains_unresolved_vars(self, value: str) -> bool:
+        """Check if a string contains unresolved envsubst variable references.
+
+        Detects patterns like ${var}, $var, ${var}_suffix.
+
+        Args:
+            value: The string to check.
+
+        Returns:
+            True if unresolved variable references are found.
+        """
+        var_patterns = [
+            r"\$\{[a-zA-Z_][a-zA-Z0-9_]*\}",  # ${var}
+            r"\$[a-zA-Z_][a-zA-Z0-9_]*",       # $var
+        ]
+        return any(re.search(p, value) for p in var_patterns)
+
     def _validate_required_fields(self) -> ValidationResult:
-        """Validate all required fields exist."""
+        """Validate all required fields exist and contain concrete values."""
         result = ValidationResult("Required Fields Validation")
 
         if self.yaml_content is None:
@@ -180,6 +200,19 @@ class LinglongYamlValidator:
                 result.add_fail(field_path, f"Required field '{field_path}' is missing")
             elif isinstance(value, str) and value.strip() == "":
                 result.add_fail(field_path, f"Required field '{field_path}' is empty")
+            elif (
+                field_path in self.NO_VAR_FIELDS
+                and isinstance(value, str)
+                and self._contains_unresolved_vars(value)
+            ):
+                result.add_fail(
+                    field_path,
+                    f"Required field '{field_path}' contains unresolved variable reference: "
+                    f"'{value.strip()}'. This is likely caused by envsubst not replacing "
+                    f"the variable. Suggested fix: replace the variable placeholder with "
+                    f"the actual value (e.g., use concrete id/name/description instead of "
+                    f"${'{'}var{'}'}).",
+                )
             else:
                 result.add_pass(field_path, f"Field '{field_path}' exists")
 
@@ -265,21 +298,15 @@ class LinglongYamlValidator:
         field_str = str(field_value).strip()
 
         # Check 3: No unresolved variable references
-        # Detect patterns like ${var}, $var, ${var}_suffix
-        var_patterns = [
-            r"\$\{[a-zA-Z_][a-zA-Z0-9_]*\}",  # ${var}
-            r"\$[a-zA-Z_][a-zA-Z0-9_]*",       # $var
-        ]
-        for pattern in var_patterns:
-            if re.search(pattern, field_str):
-                result.add_fail(
-                    field_name,
-                    f"Field '{field_name}' contains unresolved variable reference: '{field_str}'. "
-                    f"This is likely caused by envsubst not replacing the variable (empty value). "
-                    f"Suggested fix: ensure the variable is set before envsubst, "
-                    f"or use actual value like '{default_id}/{default_version}'",
-                )
-                return
+        if self._contains_unresolved_vars(field_str):
+            result.add_fail(
+                field_name,
+                f"Field '{field_name}' contains unresolved variable reference: '{field_str}'. "
+                f"This is likely caused by envsubst not replacing the variable (empty value). "
+                f"Suggested fix: ensure the variable is set before envsubst, "
+                f"or use actual value like '{default_id}/{default_version}'",
+            )
+            return
 
         # Check 4: Format is id/version
         if "/" not in field_str:
