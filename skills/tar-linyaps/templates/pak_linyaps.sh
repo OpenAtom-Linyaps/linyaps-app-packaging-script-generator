@@ -498,6 +498,16 @@ build_pak() {
 	# 處理二進制文件：創建 wrapper 腳本
 	# 在 files/bin/ 創建 wrapper 腳本，執行實際二進制文件
 	# 注意：此操作必須在所有文件複製和路徑處理完成之後進行
+
+	# 標記 binary_name 是否為用戶顯式指定
+	# 用於決定 desktop Exec= 替換策略：
+	#   - 客製化模式（用戶指定）：無條件替換所有 desktop 的 Exec= 為 wrapper
+	#   - 自動偵測模式（從 desktop 提取）：只替換 Exec= 包含 binary_name 的行
+	is_custom_binary_name=false
+	if [ -n "${binary_name}" ]; then
+		is_custom_binary_name=true
+	fi
+
 	if [ -z "${binary_name}" ]; then
 		# 未指定 binary_name 時，自動從 desktop 文件中提取
 		echo "binary_name not specified, auto-detecting from desktop files..."
@@ -557,15 +567,38 @@ WRAPPER_EOF
 			fi
 
 			# 更新 desktop 文件的 Exec= 字段
-			# 將 Exec= 中的二進制路徑替換為 wrapper 路徑
-			# 處理 files_res/ 和 binary/ 中的所有 desktop 文件
+			# 根據 binary_name 來源採用不同替換策略：
+			#   - 客製化模式：無條件替換所有 desktop 的 Exec= 為 wrapper
+			#   - 自動偵測模式：只替換 Exec= 包含 binary_name 的行
 			for desktop_file in $(find "${build_tmp_dir}" -name "*.desktop" -type f 2>/dev/null); do
-				if grep -q "Exec=.*${binary_name}" "${desktop_file}"; then
-					# 替換 Exec= 行中的二進制路徑為 wrapper 路徑
-					# wrapper 位於 bin/ 目錄，直接使用二進制名稱即可
-					# 保留 Exec= 後的參數（如 %F, %U 等）
-					sed -i "s|Exec=[^ ]*${binary_name}[^ ]*|Exec=${binary_name}.wrapper|g" "${desktop_file}"
-					echo "Updated Exec= in: ${desktop_file}"
+				if [ "${is_custom_binary_name}" = "true" ]; then
+					# 客製化模式：無條件替換所有 Exec= 行
+					# 處理 env 前綴（如 Exec=env VAR=val binary args）
+					# 移除 env 前綴，將第一個二進制參數替換為 wrapper，保留其餘參數
+					while IFS= read -r exec_line; do
+						[ -z "${exec_line}" ] && continue
+						# 提取 Exec= 後的完整值
+						exec_value="${exec_line#Exec=}"
+						# 移除 env VAR=val 前綴（支持多個 KEY=VALUE 環境變數）
+						exec_value=$(echo "${exec_value}" | sed 's/^env \(\S*=\S*\s\)*//')
+						# 提取第一個參數（二進制名/路徑）和其餘參數
+						exec_bin=$(echo "${exec_value}" | awk '{print $1}')
+						exec_args=$(echo "${exec_value}" | awk '{$1=""; print $0}' | sed 's/^ //')
+						# 替換為 wrapper
+						new_exec="Exec=${binary_name}.wrapper"
+						if [ -n "${exec_args}" ]; then
+							new_exec="${new_exec} ${exec_args}"
+						fi
+						# 在文件中替換該行
+						sed -i "s|${exec_line}|${new_exec}|" "${desktop_file}"
+					done < <(grep "^Exec=" "${desktop_file}")
+					echo "Updated Exec= in: ${desktop_file} (custom binary: ${binary_name}.wrapper)"
+				else
+					# 自動偵測模式：只替換 Exec= 包含 binary_name 的行
+					if grep -q "Exec=.*${binary_name}" "${desktop_file}"; then
+						sed -i "s|Exec=[^ ]*${binary_name}[^ ]*|Exec=${binary_name}.wrapper|g" "${desktop_file}"
+						echo "Updated Exec= in: ${desktop_file}"
+					fi
 				fi
 			done
 		else
