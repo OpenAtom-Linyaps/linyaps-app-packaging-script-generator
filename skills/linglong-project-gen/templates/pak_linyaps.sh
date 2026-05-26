@@ -529,6 +529,56 @@ build_dir_init() {
 		envsubst >"${build_tmp_dir}/linglong.yaml"
 }
 
+# 檢查 ELF 二進制的架構兼容性
+# 參數：文件路徑
+# 返回值：
+#   0 - 兼容（非 ELF 或架構匹配）
+#   1 - 不兼容（架構不匹配、未知架構、或文件無效）
+# 使用 file 命令檢測 ELF 類型並提取架構，與 uname -m 比較
+check_elf_compatibility() {
+	local file_path="$1"
+
+	if [ ! -f "${file_path}" ]; then
+		echo "  跳過: 文件不存在或無效: ${file_path}" >&2
+		return 1
+	fi
+
+	local file_output
+	file_output=$(file "${file_path}") || return 1
+
+	# 非 ELF 文件（如 shell 腳本），視為有效，跳過架構檢查
+	case "${file_output}" in
+	*"ELF "*"executable"* | *"ELF "*"shared object"*) ;;
+	*)
+		return 0
+		;;
+	esac
+
+	# ELF 文件：提取架構字段並映射為 uname -m 標準格式
+	local elf_arch=""
+	case "${file_output}" in
+	*"x86-64"*) elf_arch="x86_64" ;;
+	*"aarch64"*) elf_arch="aarch64" ;;
+	*"ARM"*) elf_arch="arm" ;;
+	*"80386"*) elf_arch="i686" ;;
+	*)
+		echo "  跳過: 無法識別 ELF 架構: ${file_path}" >&2
+		echo "    file 輸出: ${file_output}" >&2
+		return 1
+		;;
+	esac
+
+	# 與當前系統架構比較
+	local host_arch
+	host_arch=$(uname -m)
+	if [ "${elf_arch}" != "${host_arch}" ]; then
+		echo "  跳過: 架構不匹配 ${elf_arch} != ${host_arch}: ${file_path}" >&2
+		return 1
+	fi
+
+	return 0
+}
+
 build_pak() {
 	## Extract the binary package
 	binary_tmp_dir="${build_tmp_dir}/tmp"
@@ -571,17 +621,29 @@ build_pak() {
 	fi
 
 	if [ -n "${binary_name}" ]; then
-		# 在 binary/ 目录下查找二进制文件
-		actual_binary=$(find "${binary_dir}" -type f -name "${binary_name}" -executable 2>/dev/null | head -n 1)
+		# 在 binary/ 目录下查找二进制文件（可能有多個匹配，如 bin/ 和 opt/ 下）
+		# 逐個檢查：跳過損壞軟鏈、架構不匹配的 ELF，直到找到有效的 binary
+		actual_binary=""
+		real_binary=""
+		rel_binary=""
+		while IFS= read -r candidate; do
+			# 解析真實路徑，跳過損壞的符號連結
+			local resolved
+			resolved=$(readlink -f "${candidate}" 2>/dev/null) || {
+				echo "  跳過損壞軟鏈: ${candidate}" >&2
+				continue
+			}
+			# 檢查 ELF 架構兼容性
+			if check_elf_compatibility "${resolved}"; then
+				actual_binary="${candidate}"
+				real_binary="${resolved}"
+				echo "  選中有效的 binary: ${candidate} -> ${resolved}" >&2
+				break
+			fi
+		done < <(find "${binary_dir}" -type f -name "${binary_name}" -executable 2>/dev/null | sort)
 
-		if [ -n "${actual_binary}" ]; then
-			# 使用 readlink -f 解析实际文件路径，处理软链情况
-			real_binary=$(readlink -f "${actual_binary}")
-
-			# 计算相对于 binary/ 的路径
-			# real_binary 示例: /path/to/binary/uTools/utools
-			# binary_dir 示例: /path/to/binary/
-			# rel_binary 示例: uTools/utools
+		if [ -n "${actual_binary}" ] && [ -n "${real_binary}" ]; then
+			# 計算相對於 binary/ 的路徑
 			rel_binary="${real_binary#${binary_dir}}"
 
 			# 创建 wrapper 脚本
