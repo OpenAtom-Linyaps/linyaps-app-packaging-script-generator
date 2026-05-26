@@ -248,10 +248,11 @@ validate_binary_name() {
 # 從 desktop 文件中自動提取 binary_name
 # 核心思路：從所有 .desktop 文件的 Exec= 字段中提取二進制名稱，
 # 統計每個名稱出現次數，返回出現次數最多的作為 binary_name
+# 參數：一個或多個搜索目錄（如 "${binary_dir}" "${files_res_dir}"）
 extract_binary_name_from_desktop() {
-	local search_dir="$1"
+	local search_dirs=("$@")
 
-	if [ ! -d "${search_dir}" ]; then
+	if [ ${#search_dirs[@]} -eq 0 ]; then
 		echo ""
 		return 1
 	fi
@@ -270,7 +271,7 @@ extract_binary_name_from_desktop() {
 				basename "$cmd" 2>/dev/null
 			fi
 		done < <(grep "^Exec=" "$file" 2>/dev/null)
-	done < <(find "${search_dir}" -name "*.desktop" -type f 2>/dev/null) >"$names_file"
+	done < <(find "${search_dirs[@]}" -name "*.desktop" -type f 2>/dev/null) >"$names_file"
 
 	# 統計出現次數，返回最多的
 	local result
@@ -283,15 +284,22 @@ extract_binary_name_from_desktop() {
 # 自動偵測 binary_name（兩級 fallback）
 # 1. 優先從 desktop 文件的 Exec= 提取
 # 2. 若無 desktop，嘗試調用 scan_executables.sh 掃描
+# 參數：一個或多個搜索目錄（如 "${binary_dir}" "${files_res_dir}"）
 # 返回偵測到的 binary_name（空字串表示失敗）
 auto_detect_binary_name() {
-	local search_dir="$1"
+	local search_dirs=("$@")
 
 	echo "--- 自動偵測 binary_name ---" >&2
 
+	if [ ${#search_dirs[@]} -eq 0 ]; then
+		echo "錯誤: 未指定搜索目錄" >&2
+		echo ""
+		return 1
+	fi
+
 	# 第一級：從 desktop 文件提取
 	local detected
-	detected=$(extract_binary_name_from_desktop "${search_dir}")
+	detected=$(extract_binary_name_from_desktop "${search_dirs[@]}")
 	if [ -n "${detected}" ]; then
 		echo "從 desktop Exec= 偵測到: ${detected}" >&2
 		echo "${detected}"
@@ -299,7 +307,7 @@ auto_detect_binary_name() {
 	fi
 	echo "未找到 desktop 文件或 Exec= 為空" >&2
 
-	# 第二級：調用 scan_executables.sh 掃描
+	# 第二級：調用 scan_executables.sh 掃描（只用第一個目錄）
 	local scan_script="${project_root}/scripts/scan_executables.sh"
 	if [ ! -f "${scan_script}" ]; then
 		echo "警告: scan_executables.sh 不存在: ${scan_script}" >&2
@@ -308,7 +316,7 @@ auto_detect_binary_name() {
 	fi
 
 	echo "嘗試 scan_executables.sh 掃描..." >&2
-	detected=$("${scan_script}" "${search_dir}" 2>/dev/null | head -1)
+	detected=$("${scan_script}" "${search_dirs[0]}" 2>/dev/null | head -1)
 	if [ -n "${detected}" ]; then
 		echo "從可執行檔掃描偵測到: ${detected}" >&2
 		echo "${detected}"
@@ -510,8 +518,9 @@ build_pak() {
 
 	if [ -z "${binary_name}" ]; then
 		# 未指定 binary_name 時，自動從 desktop 文件中提取
+		# 同時搜索 binary/（解壓的 tar 內容）和 files_res/（LLM 初始化的模板資源）
 		echo "binary_name not specified, auto-detecting from desktop files..."
-		binary_name=$(extract_binary_name_from_desktop "${binary_dir}")
+		binary_name=$(extract_binary_name_from_desktop "${binary_dir}" "${build_tmp_dir}/files_res")
 		if [ -z "${binary_name}" ]; then
 			# 第二級 fallback：調用 scan_executables.sh 掃描
 			echo "未從 desktop 偵測到 binary_name，嘗試 scan_executables.sh 掃描..."
