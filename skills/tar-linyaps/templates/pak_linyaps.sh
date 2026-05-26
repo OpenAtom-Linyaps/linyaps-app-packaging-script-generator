@@ -398,17 +398,15 @@ generate_version_from_origin() {
 		return 1
 	fi
 
-	local cleaned_version="${origin_ver%%~*}"
-
 	local version_parts=()
-	local temp_version="${cleaned_version}"
+	local temp_version="${origin_ver}"
 
 	while [[ "${temp_version}" =~ ([0-9]+)(.*) ]]; do
 		version_parts+=("${BASH_REMATCH[1]}")
 		temp_version="${BASH_REMATCH[2]#*[!0-9]}"
 	done
 
-	if [[ ${#version_parts[@]} -lt 2 ]]; then
+	if [[ ${#version_parts[@]} -lt 1 ]]; then
 		echo "錯誤: origin_version 格式不正確，無法提取足夠的數字部分" >&2
 		return 1
 	fi
