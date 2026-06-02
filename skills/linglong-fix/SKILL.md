@@ -3,6 +3,8 @@ name: linglong-fix
 description: >
   根据验证报告自动修复玲珑构建项目中的问题，
   包括linglong.yaml格式、desktop文件、图标目录结构、二进制文件权限等。
+user-invocable: false
+---
 
 # 玲珑工程修复
 

@@ -3,6 +3,8 @@ name: resource-collector
 description: >
   从deb包解压后的目录中提取应用资源文件（desktop文件、图标、appdata、补全脚本等），
   按照玲珑打包规范整理到 files_res/ 目录结构中。
+user-invocable: false
+---
 
 # 资源收集器
 

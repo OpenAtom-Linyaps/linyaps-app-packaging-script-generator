@@ -1,3 +1,10 @@
+---
+name: tar-linyaps
+description: >
+  將 Linux binary release tar 歸檔包轉換為玲瓏（Linglong）應用便捷打包腳本。
+user-invocable: false
+---
+
 # tar-linyaps Skill
 
 ## 功能說明

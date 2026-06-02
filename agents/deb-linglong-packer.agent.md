@@ -141,35 +141,12 @@ done
 
 ## Skills 查找策略
 
-### Step 0: 客戶端環境偵測（首要步驟）
-在查找 skills 之前，先偵測當前運行的客戶端環境，以確定最優的 skill 載入方式：
+所有 skill 已通過 `.opencode/skills/` 符號連結指向 `skills/` 源目錄，支持多客戶端自動發現。
 
-```bash
-# 偵測客戶端環境
-if [ -d ".opencode" ] || [ -d "$HOME/.config/opencode" ]; then
-    echo "Client: OpenCode"
-    echo "Skill tool: available (use skill({ name: '<skill-name>' }) to load)"
-    echo "Skill dirs: .opencode/skills/, .claude/skills/, .agents/skills/"
-elif [ -d ".claude" ] || [ -d "$HOME/.claude" ]; then
-    echo "Client: Claude Code"
-    echo "Skill tool: not available (read SKILL.md directly)"
-    echo "Skill dirs: .claude/skills/, .agents/skills/"
-elif [ -d ".clinerules" ] || [ -d "$HOME/.cline" ]; then
-    echo "Client: Cline"
-    echo "Skill tool: not available (read SKILL.md directly)"
-    echo "Skill dirs: .clinerules/, .agents/skills/"
-else
-    echo "Client: Unknown (fallback to file-based skill loading)"
-    echo "Skill dirs: skills/ (workspace root)"
-fi
-```
+### OpenCode 環境（首選）
 
-**偵測結果決定載入方式**：
-- **OpenCode**：優先使用內建 `skill` 工具調用 `skill({ name: "deb-analysis" })`，若失敗則回退到文件讀取
-- **Claude Code / Cline / 其他**：直接讀取 `SKILL.md` 文件內容作為指令
+直接使用內建 `skill` 工具載入（`.opencode/skills/` 符號連結已就位）：
 
-### Step 1: 使用 skill 工具（OpenCode 環境首選）
-若偵測到 OpenCode 環境，優先使用內建 `skill` 工具載入：
 ```
 skill({ name: "deb-analysis" })
 skill({ name: "linglong-project-gen" })
@@ -180,72 +157,30 @@ skill({ name: "compat-testing" })
 skill({ name: "linglong-fix" })
 ```
 
-> **注意**：`skill` 工具會自動從 `.opencode/skills/`、`.claude/skills/`、`.agents/skills/` 等目錄發現並載入 SKILL.md。
+### 其他客戶端 / Fallback
 
-### Step 2: 相對路徑讀取（skill 工具不可用時）
-從 workspace 根目錄直接讀取 SKILL.md 文件：
+直接讀取 `skills/*/SKILL.md` 文件（相對於 workspace 根目錄）：
+
 ```bash
-# 讀取 skill 指令文件
 cat skills/deb-analysis/SKILL.md
 cat skills/linglong-project-gen/SKILL.md
-
-# 確認腳本存在
-ls skills/deb-analysis/scripts/deb_to_linglong.py
-ls skills/linglong-project-gen/templates/pak_linyaps.sh
 ```
 
-### Step 3: Workspace 內搜索（Step 2 失敗時）
-```bash
-find . -path "*/skills/deb-analysis/SKILL.md" 2>/dev/null
-find . -path "*/skills/deb-analysis/scripts/deb_to_linglong.py" 2>/dev/null
-find . -path "*/skills/linglong-project-gen/templates/pak_linyaps.sh" 2>/dev/null
+### Skills 符號連結結構
+
 ```
-
-### Step 4: 客戶端配置目錄搜索（Step 3 失敗時）
-
-只在已聲明的 agent 客戶端配置目錄中搜索，**禁止**對 `~` 或 `/` 進行寬泛搜索：
-
-```bash
-# 在已聲明的客戶端目錄中搜索 skills
-for dir in \
-  "$HOME/.config/opencode" \
-  "$HOME/.local/share/opencode" \
-  "$HOME/.opencode" \
-  "$HOME/.claude" \
-  "$HOME/.agents" \
-  "$HOME/.cline/rules"; do
-  [ -d "$dir" ] && find "$dir" -maxdepth 4 -type d -name "skills" 2>/dev/null
-done
-
-# 若找到 skills 目錄，列出其內容以確認結構
-# find <找到的skills路徑> -maxdepth 3 -type f -name "SKILL.md" 2>/dev/null
+.opencode/skills/          ← discovery 路徑（符號連結）
+├── deb-analysis         → ../../skills/deb-analysis
+├── resource-collector   → ../../skills/resource-collector
+├── linglong-project-gen → ../../skills/linglong-project-gen
+├── compat-testing       → ../../skills/compat-testing
+├── linglong-fix         → ../../skills/linglong-fix
+├── project-structure-validator → ../../skills/project-structure-validator
+└── tar-linyaps          → ../../skills/tar-linyaps
 ```
-
-### Step 5: 詢問用戶（所有步驟失敗時）
-若以上步驟均無法找到 skills，**暫停並詢問用戶**提供正確路徑。
-
-### ⚠️ find 命令使用規範
-- **搜索範圍**：限定在已聲明的客戶端配置目錄中搜索（見下方路徑表），**禁止** `find ~` 或 `find /` 等寬泛搜索
-- **maxdepth**：客戶端目錄內搜索使用 `4`，workspace 內搜索使用 `5`
-- **過濾**：始終使用 `2>/dev/null` 過濾權限錯誤
-- **限制輸出**：使用 `head` 限制結果數量
-- **禁止無目標搜索**：不要使用 `find / -name "*.py"`、`find ~ -name "skills"` 等無目標搜索
-
-### 客戶端 Skills 路徑白名單
-
-以下為各客戶端的 skills 路徑，作為 Step 4 搜索的**白名單**。搜索範圍**僅限**這些目錄：
-
-| 客戶端 | 專案級路徑 | 全局路徑 (XDG) | skill 工具 |
-|--------|-----------|----------------|------------|
-| OpenCode | `.opencode/skills/<skill>/SKILL.md` | `~/.config/opencode/skills/<skill>/SKILL.md` | ✅ 內建 `skill({ name })` |
-| OpenCode (兼容) | `.claude/skills/<skill>/SKILL.md` | `~/.local/share/opencode/skills/<skill>/SKILL.md` | ✅ 內建 `skill({ name })` |
-| OpenCode (兼容) | `.agents/skills/<skill>/SKILL.md` | `~/.agents/skills/<skill>/SKILL.md` | ✅ 內建 `skill({ name })` |
-| Claude Code | `.claude/skills/<skill>/SKILL.md` | `~/.claude/skills/<skill>/SKILL.md` | ❌ 需直接讀取 SKILL.md |
-| Cline | `.clinerules/skills/<skill>/SKILL.md` | `~/.cline/rules/skills/<skill>/SKILL.md` | ❌ 需直接讀取 SKILL.md |
-| Cline (兼容) | `.agents/skills/<skill>/SKILL.md` | — | ❌ 需直接讀取 SKILL.md |
 
 > **注意**：所有腳本調用使用相對於 workspace 根目錄的路徑，**不要**使用 `cd` 切換工作目錄後再執行。
-> **OpenCode 用戶**：確保 skills 已複製到 `.opencode/skills/` 目錄，並確認 agent frontmatter 中 `tools: skill: true` 已啟用。
+> **用戶不可獨立調用**：所有子 skill 設置為 `user-invocable: false`，只能通過 agent 工作流間接使用。
 
 ## 工作流程
 

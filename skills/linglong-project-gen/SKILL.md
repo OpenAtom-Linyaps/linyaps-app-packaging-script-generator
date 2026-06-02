@@ -2,6 +2,8 @@
 name: linglong-project-gen
 description: >
   根据deb包信息和CSV配置，生成完整的玲珑打包工程，包括 linglong.yaml 配置文件和 pak_linyaps.sh 打包脚本。
+user-invocable: false
+---
 
 # 玲珑工程生成
 

@@ -3,6 +3,8 @@ name: project-structure-validator
 description: >
   验证玲珑打包项目目录结构和必要文件的完整性。支持通过JSON配置文件自定义检查规则，
   包括目录存在性、文件存在性、通配符匹配数量、脚本可执行权限等。
+user-invocable: false
+---
 
 # 项目结构验证器
 

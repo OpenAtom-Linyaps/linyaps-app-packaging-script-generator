@@ -22,32 +22,26 @@ mkdir -p ~/.config/opencode/agents
 cp agents/deb-linglong-packer.agent.md ~/.config/opencode/agents/deb-linglong-packer.md
 ```
 
-#### 2. 复制 Skills 文件
+#### 2. Skills 自动发现
 
-将所需的 skills 复制到对应目录：
+Skills 已通过 `.opencode/skills/` 符号链接自动就位，**无需手动复制**。
 
-```bash
-# 项目级 skills
-mkdir -p .opencode/skills
-cp -r skills/deb-analysis           .opencode/skills/
-cp -r skills/linglong-project-gen   .opencode/skills/
-cp -r skills/resource-collector     .opencode/skills/
-cp -r skills/compat-testing         .opencode/skills/
-cp -r skills/linglong-fix           .opencode/skills/
-cp -r skills/project-structure-validator .opencode/skills/
+仓库中 `.opencode/skills/` 目录包含指向 `skills/` 源目录的符号链接，OpenCode 的 skill 工具会自动发现并加载。
+
+```
+.opencode/skills/
+├── deb-analysis           → ../../skills/deb-analysis
+├── resource-collector     → ../../skills/resource-collector
+├── linglong-project-gen   → ../../skills/linglong-project-gen
+├── compat-testing         → ../../skills/compat-testing
+├── linglong-fix           → ../../skills/linglong-fix
+├── project-structure-validator → ../../skills/project-structure-validator
+└── tar-linyaps            → ../../skills/tar-linyaps
 ```
 
-#### 3. 确认 skill 工具已启用
+> **注意**：所有子 skill 设置为 `user-invocable: false`，只能通过 agent 工作流间接使用，不可独立调用。
 
-> **重要**：Agent 的 YAML frontmatter 中必须包含 `skill: true` 才能使用 OpenCode 内建的 skill 工具。
-> 当前版本的 `deb-linglong-packer.agent.md` 已默认启用，无需手动修改。
->
-> 如果遇到 "Skill not found. Available skills: none" 错误，请检查：
-> 1. Agent frontmatter 中 `tools:` 是否包含 `skill: true`
-> 2. Skills 是否已复制到 `.opencode/skills/` 目录
-> 3. 每个 skill 目录下是否有 `SKILL.md` 文件
-
-#### 4. 目录结构
+#### 3. 目录结构
 
 最终结构应如下：
 
@@ -56,19 +50,24 @@ cp -r skills/project-structure-validator .opencode/skills/
 ├── .opencode/
 │   ├── agents/
 │   │   └── deb-linglong-packer.md    # Agent 定义
-│   └── skills/
-│       ├── deb-analysis/
-│       │   └── SKILL.md
-│       ├── linglong-project-gen/
-│       │   └── SKILL.md
-│       ├── resource-collector/
-│       │   └── SKILL.md
-│       ├── compat-testing/
-│       │   └── SKILL.md
-│       ├── linglong-fix/
-│       │   └── SKILL.md
-│       └── project-structure-validator/
-│           └── SKILL.md
+│   └── skills/                        # 符号链接（自动发现）
+│       ├── deb-analysis           → ../../skills/deb-analysis
+│       ├── linglong-project-gen   → ../../skills/linglong-project-gen
+│       ├── resource-collector     → ../../skills/resource-collector
+│       ├── compat-testing         → ../../skills/compat-testing
+│       ├── linglong-fix           → ../../skills/linglong-fix
+│       ├── project-structure-validator → ../../skills/project-structure-validator
+│       └── tar-linyaps            → ../../skills/tar-linyaps
+├── skills/                            # 源文件（canonical 位置）
+│   ├── deb-analysis/
+│   ├── linglong-project-gen/
+│   ├── resource-collector/
+│   ├── compat-testing/
+│   ├── linglong-fix/
+│   ├── project-structure-validator/
+│   └── tar-linyaps/
+└── agents/
+    └── deb-linglong-packer.agent.md
 ```
 
 ### 方式二：Claude Code

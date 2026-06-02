@@ -3,6 +3,8 @@ name: deb-analysis
 description: >
   解析Debian软件包(.deb)文件，提取元数据信息并解压文件内容，
   为后续玲珑打包工程生成提供基础数据。
+user-invocable: false
+---
 
 # Deb包分析
 
