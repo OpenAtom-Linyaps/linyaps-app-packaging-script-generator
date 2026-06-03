@@ -13,6 +13,7 @@
 # - 基于 Exec 命令进行去重（而非文件内容哈希）
 # - 例如：Exec=/usr/bin/app %F 和 Exec=app %U 会被识别为重复
 # - 保留第一个遇到的文件，删除后续重复文件
+# - 包含 NoDisplay=true 的 desktop 文件不参与去重（如 URL handler 等隐藏条目）
 #
 # 用法：
 #   dedup_desktop_files.sh <target_dir> [--verbose]
@@ -46,6 +47,7 @@ REFERENCE_DIR=""
 STAT_TOTAL_FILES=0
 STAT_UNIQUE_FILES=0
 STAT_DUPLICATE_FILES=0
+STAT_SKIPPED_FILES=0
 
 # 日志函数
 log_info() {
@@ -126,6 +128,23 @@ parse_args() {
 	fi
 }
 
+# 检查 desktop 文件是否设置了 NoDisplay=true
+# NoDisplay=true 的文件是隐藏条目，不参与去重
+is_nodisplay() {
+	local desktop_file="$1"
+	local nodisplay_line
+	nodisplay_line=$(grep -E "^NoDisplay=" "${desktop_file}" 2>/dev/null | head -n 1)
+	if [ -z "${nodisplay_line}" ]; then
+		return 1 # 非 NoDisplay
+	fi
+	local nodisplay_value="${nodisplay_line#NoDisplay=}"
+	# 忽略大小写比较
+	if [ "${nodisplay_value,,}" = "true" ]; then
+		return 0 # 是 NoDisplay=true
+	fi
+	return 1
+}
+
 # 提取 Exec 命令（忽略路径和参数）
 # 例如：Exec=/usr/bin/app %F -> app
 #       Exec=app %F -> app
@@ -202,6 +221,13 @@ dedup_desktop_files() {
 				readarray -t ref_files_array <<<"${ref_desktop_files}"
 
 				for ref_file in "${ref_files_array[@]}"; do
+					# 跳过 NoDisplay=true 的文件
+					if is_nodisplay "${ref_file}"; then
+						if [ "${VERBOSE}" = "true" ]; then
+							log_info "  跳过参考文件 (NoDisplay=true): $(basename "${ref_file}")"
+						fi
+						continue
+					fi
 					local ref_exec
 					ref_exec=$(extract_exec_command "${ref_file}")
 					if [ -n "${ref_exec}" ]; then
@@ -220,6 +246,15 @@ dedup_desktop_files() {
 
 	# 遍历所有 desktop 文件
 	for desktop_file in "${files_array[@]}"; do
+		# 跳过 NoDisplay=true 的文件，不参与去重
+		if is_nodisplay "${desktop_file}"; then
+			STAT_SKIPPED_FILES=$((STAT_SKIPPED_FILES + 1))
+			if [ "${VERBOSE}" = "true" ]; then
+				log_info "跳过 (NoDisplay=true): $(basename "${desktop_file}")"
+			fi
+			continue
+		fi
+
 		# 提取 Exec 命令
 		local exec_cmd
 		exec_cmd=$(extract_exec_command "${desktop_file}")
@@ -272,6 +307,7 @@ dedup_desktop_files() {
 	echo ""
 	log_success "Desktop 文件去重完成"
 	log_info "  总文件数: ${STAT_TOTAL_FILES}"
+	log_info "  跳过 (NoDisplay): ${STAT_SKIPPED_FILES}"
 	log_info "  唯一文件: ${STAT_UNIQUE_FILES}"
 	log_info "  删除重复: ${STAT_DUPLICATE_FILES}"
 
