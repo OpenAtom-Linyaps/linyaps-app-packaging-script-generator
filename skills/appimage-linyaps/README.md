@@ -151,19 +151,21 @@ source ./scripts/parse_build_config.sh <config.json>
 ```
 
 ### 必填参数
-- `src_url`：AppImage 文件路径或下载 URL（必填）
+- `src_url`：AppImage 文件路径或下载 URL（必填，映射为 CLI 的 `--src_path`）
 - `app_name`：应用名称
 - `package_id`：玲珑包 ID（反向域名格式）
 - `description`：应用描述
 
 ### 可选参数
 - `binary_name`：显式指定 Exec 命令
-- `icon_url`：图标下载 URL
+- `icon_url`：图标下载 URL（映射为 CLI 的 `--icon_path`）
 - `app_version`：版本号
 - `base_id`/`base_version`：base 层配置
 - `runtime_id`/`runtime_version`：runtime 层配置
 - `linyaps_arch`：目标架构
 - `output_dir`：输出目录
+
+> **注意**：JSON 配置中的 `src_url` 和 `icon_url` 在 `parse_build_config.sh` 輸出時會自動映射為 `src_path` 和 `icon_path`，與 `pak_linyaps.sh` CLI 參數一致。
 
 ## 工作流程
 
