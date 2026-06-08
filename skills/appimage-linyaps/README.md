@@ -76,11 +76,11 @@ cat ../docs/appimage-linyaps.README.md
 
 **用法**：
 ```bash
-./scripts/extract_appimage.sh <appimage_path> <output_dir>
+./scripts/extract_appimage.sh <src_path> <output_dir>
 ```
 
 **参数**：
-- `appimage_path`：AppImage 文件路径
+- `src_path`：AppImage 文件路径
 - `output_dir`：输出目录
 
 **输出**：在 `output_dir` 下生成 `squashfs-root/` 目录
@@ -103,11 +103,11 @@ cat ../docs/appimage-linyaps.README.md
 
 **用法**：
 ```bash
-source ./scripts/parse_appimage_metadata.sh <appimage_file> <squashfs_root_dir>
+source ./scripts/parse_appimage_metadata.sh <src_path> <squashfs_root_dir>
 ```
 
 **参数**：
-- `appimage_file`：AppImage 文件路径
+- `src_path`：AppImage 文件路径
 - `squashfs_root_dir`：squashfs-root 目录路径
 
 **输出**：key=value 格式的元数据
@@ -131,12 +131,11 @@ source ./scripts/parse_build_config.sh <config.json>
 ```json
 {
   "main": {
-    "appimage_file": "/path/to/application.AppImage",
-    "appimage_url": "",
+    "src_url": "/path/to/application.AppImage",
     "app_name": "My Application",
     "package_id": "com.example.myapp",
     "description": "A sample application converted from AppImage",
-    "exec_command": "",
+    "binary_name": "",
     "icon_url": ""
   },
   "optional": {
@@ -152,13 +151,13 @@ source ./scripts/parse_build_config.sh <config.json>
 ```
 
 ### 必填参数
-- `appimage_file` 或 `appimage_url`（二选一）
+- `src_url`：AppImage 文件路径或下载 URL（必填）
 - `app_name`：应用名称
 - `package_id`：玲珑包 ID（反向域名格式）
 - `description`：应用描述
 
 ### 可选参数
-- `exec_command`：显式指定 Exec 命令
+- `binary_name`：显式指定 Exec 命令
 - `icon_url`：图标下载 URL
 - `app_version`：版本号
 - `base_id`/`base_version`：base 层配置
@@ -266,7 +265,7 @@ exec_cmd=$(./scripts/resolve_exec_command.sh ./temp/squashfs_root)
 ### 3. Exec 命令提取失败
 **错误**：`无法从 Exec= 中提取命令`
 **解决**：
-- 使用 `exec_command` 参数显式指定
+- 使用 `binary_name` 参数显式指定
 - 检查 desktop 文件格式
 - 查看支持的 Exec 模式
 
