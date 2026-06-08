@@ -2,12 +2,11 @@
   "_comment": "appimage-linyaps 構建配置文件 — 分組結構，main 為必填，optional 為可選",
 
   "main": {
-    "appimage_file": "/path/to/application.AppImage",
-    "appimage_url": "",
+    "src_url": "/path/to/application.AppImage",
     "app_name": "My Application",
     "package_id": "com.example.myapp",
     "description": "A sample application converted from AppImage",
-    "exec_command": "",
+    "binary_name": "",
     "icon_url": ""
   },
 

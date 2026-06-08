@@ -5,7 +5,7 @@
 #=============================================================================
 # 基於 tar-linyaps 的 pak_linyaps.sh 模板，專門處理 AppImage 應用包
 # 差異於 tar 版：
-#   - 使用 --appimage_path 替代 --src_path 接受 AppImage 文件路徑
+#   - 使用 --src_path 接受 AppImage 文件路徑（與 tar/deb 統一）
 #   - 使用 extract_appimage.sh 解壓而非 tar -xf
 #   - 調用 resolve_exec_command.sh 解析 Exec 命令
 #   - 調用 parse_appimage_metadata.sh 提取元數據
@@ -13,7 +13,7 @@
 #=============================================================================
 
 srcType="appimage"
-templateVer="2026.06.04"
+templateVer="2026.06.08"
 
 set -x
 
@@ -40,8 +40,8 @@ push_account_user=""
 push_account_passwd=""
 
 # AppImage 專用參數
-appimage_path=""
-exec_command=""
+src_path=""
+binary_name=""
 
 init_global_data() {
 	ARCH=$(uname -m)
@@ -71,8 +71,8 @@ init_global_data() {
 		--ll_version)
 			ll_version="$val"
 			;;
-		--appimage_path)
-			appimage_path="$val"
+		--src_path)
+			src_path="$val"
 			;;
 		--output_dir)
 			output_dir="$val"
@@ -95,8 +95,8 @@ init_global_data() {
 		--whitelist)
 			whitelist_file="$val"
 			;;
-		--exec_command)
-			exec_command="$val"
+		--binary_name)
+			binary_name="$val"
 			;;
 		--package_id)
 			package_id="$val"
@@ -215,28 +215,28 @@ validate_base_runtime_whitelist() {
 	fi
 }
 
-# 驗證 appimage_path 是否有效
-validate_appimage_path() {
-	if [ -z "${appimage_path}" ]; then
-		echo "錯誤: --appimage_path 參數為空" >&2
+# 驗證 src_path 是否有效
+validate_src_path() {
+	if [ -z "${src_path}" ]; then
+		echo "錯誤: --src_path 參數為空" >&2
 		return 1
 	fi
 
-	if [ ! -f "${appimage_path}" ]; then
-		echo "錯誤: --appimage_path 文件不存在: ${appimage_path}" >&2
+	if [ ! -f "${src_path}" ]; then
+		echo "錯誤: --src_path 文件不存在: ${src_path}" >&2
 		return 1
 	fi
 
 	# 驗證文件格式（必須是 ELF 或 AppImage）
 	local file_output
-	file_output=$(file "${appimage_path}")
+	file_output=$(file "${src_path}")
 	case "${file_output}" in
 	*"ELF"*|*"AppImage"*)
-		echo "驗證通過: appimage_path='${appimage_path}'"
+		echo "驗證通過: src_path='${src_path}'"
 		return 0
 		;;
 	*)
-		echo "錯誤: 文件不是有效的 AppImage: ${appimage_path}" >&2
+		echo "錯誤: 文件不是有效的 AppImage: ${src_path}" >&2
 		echo "  file 輸出: ${file_output}" >&2
 		return 1
 		;;
@@ -354,11 +354,11 @@ version_check_regroup() {
 
 # 驗證必填字段
 validate_required_fields() {
-	if [ -z "${appimage_path}" ]; then
-		echo "請指定 AppImage 文件完整路徑 appimage_path" >&2
+	if [ -z "${src_path}" ]; then
+		echo "請指定 AppImage 文件完整路徑 src_path" >&2
 		exit 1
-	elif [ ! -f "${appimage_path}" ]; then
-		echo "指定的 AppImage 文件不存在: ${appimage_path}" >&2
+	elif [ ! -f "${src_path}" ]; then
+		echo "指定的 AppImage 文件不存在: ${src_path}" >&2
 		exit 1
 	fi
 
@@ -388,12 +388,12 @@ validate_required_fields() {
 
 # 數據重新組裝檢查
 data_regroup_check() {
-	appimage_path=$(readlink -f "${appimage_path}")
+	src_path=$(readlink -f "${src_path}")
 	output_dir=$(readlink -f "${output_dir}")
 
 	version_check_regroup
 	validate_required_fields
-	validate_appimage_path
+	validate_src_path
 }
 
 # 初始化構建目錄（與 tar 版一致的通用機制）
@@ -446,8 +446,8 @@ build_pak() {
 	# 使用 extract_appimage.sh 腳本解壓 AppImage 文件
 	# 解壓後會在 binary_tmp_dir 下生成 squashfs-root/ 目錄
 	mkdir -p "${binary_tmp_dir}"
-	echo "正在解壓 AppImage: ${appimage_path}"
-	"${project_root}/scripts/extract_appimage.sh" "${appimage_path}" "${binary_tmp_dir}"
+	echo "正在解壓 AppImage: ${src_path}"
+	"${project_root}/scripts/extract_appimage.sh" "${src_path}" "${binary_tmp_dir}"
 
 	# 驗證解壓結果
 	if [ ! -d "${binary_tmp_dir}/squashfs-root" ]; then
@@ -470,19 +470,19 @@ build_pak() {
 	mkdir -p "${binary_dir}/bin"
 
 	# 解析 Exec 命令
-	# 如果用戶顯式指定 exec_command，則使用用戶指定的
+	# 如果用戶顯式指定 binary_name，則使用用戶指定的
 	# 否則從 desktop 文件中自動提取
 	local resolved_exec=""
-	if [ -n "${exec_command}" ]; then
-		echo "使用用戶指定的 exec_command: ${exec_command}"
-		resolved_exec="${exec_command}"
+	if [ -n "${binary_name}" ]; then
+		echo "使用用戶指定的 binary_name: ${binary_name}"
+		resolved_exec="${binary_name}"
 	else
-		echo "exec_command 未指定，自動從 desktop 文件提取..."
+		echo "binary_name 未指定，自動從 desktop 文件提取..."
 		resolved_exec=$("${project_root}/scripts/resolve_exec_command.sh" "${binary_tmp_dir}/squashfs-root" 2>/dev/null || echo "")
 		if [ -n "${resolved_exec}" ]; then
-			echo "從 desktop 文件提取到 exec_command: ${resolved_exec}"
+			echo "從 desktop 文件提取到 binary_name: ${resolved_exec}"
 		else
-			echo "警告: 無法從 desktop 文件提取 exec_command，將使用 AppRun" >&2
+			echo "警告: 無法從 desktop 文件提取 binary_name，將使用 AppRun" >&2
 			resolved_exec="AppRun"
 		fi
 	fi

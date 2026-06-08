@@ -20,14 +20,13 @@ set -euo pipefail
 #=============================================================================
 
 # 必填欄位列表（main 分組）
-# 注意：appimage_file 和 appimage_url 至少需要提供一個
-REQUIRED_FIELDS=("app_name" "package_id" "description")
+# 注意：src_url 為必填（AppImage 文件路徑或下載 URL）
+REQUIRED_FIELDS=("src_url" "app_name" "package_id" "description")
 
 # 可選欄位列表（optional 分組，含默認值，空字串表示無默認值）
 declare -A OPTIONAL_FIELDS=(
-    ["appimage_file"]=""
-    ["appimage_url"]=""
-    ["exec_command"]=""
+    ["src_url"]=""
+    ["binary_name"]=""
     ["icon_url"]=""
     ["app_version"]=""
     ["base_id"]="org.deepin.base"
@@ -39,7 +38,7 @@ declare -A OPTIONAL_FIELDS=(
 )
 
 # main 分組已知欄位
-MAIN_KNOWN_FIELDS=("appimage_file" "appimage_url" "app_name" "package_id" "description" "icon_url" "exec_command")
+MAIN_KNOWN_FIELDS=("src_url" "app_name" "package_id" "description" "icon_url" "binary_name")
 
 # optional 分組已知欄位
 OPTIONAL_KNOWN_FIELDS=("app_version" "base_id" "base_version"
@@ -65,11 +64,10 @@ main（必填）：
   app_name       - 應用名稱
   package_id     - 玲瓏包 ID（反向域名格式）
   description    - 應用描述
-  appimage_file  - AppImage 本地文件路徑（與 appimage_url 二選一）
-  appimage_url   - AppImage 下載 URL（與 appimage_file 二選一）
+  src_url        - AppImage 文件路徑或下載 URL
 
 main（可選）：
-  exec_command   - 顯式指定 Exec 命令（跳過自動提取）
+  binary_name    - 顯式指定 Exec 命令（跳過自動提取）
   icon_url       - icon 下載 URL
 
 optional（可選）：
@@ -156,14 +154,12 @@ validate_required_fields() {
         fi
     done
 
-    # 特殊驗證：appimage_file 或 appimage_url 至少需要一個
-    local appimage_file
-    appimage_file=$(jq -r '.main.appimage_file // empty' "${json_file}")
-    local appimage_url
-    appimage_url=$(jq -r '.main.appimage_url // empty' "${json_file}")
+    # 特殊驗證：src_url 為必填
+    local src_url
+    src_url=$(jq -r '.main.src_url // empty' "${json_file}")
 
-    if [ -z "${appimage_file}" ] && [ -z "${appimage_url}" ]; then
-        log_error "main 中 appimage_file 和 appimage_url 至少需要提供一個"
+    if [ -z "${src_url}" ]; then
+        log_error "main 中缺少必填欄位: src_url"
         has_error=1
     fi
 
@@ -232,20 +228,11 @@ validate_url() {
 validate_field_values() {
     local json_file="$1"
 
-    # 驗證 appimage_url（如果提供）
-    local appimage_url
-    appimage_url=$(jq -r '.main.appimage_url // empty' "${json_file}")
-    if [ -n "${appimage_url}" ]; then
-        validate_url "appimage_url" "${appimage_url}"
-    fi
-
-    # 驗證 appimage_file（如果提供）
-    local appimage_file
-    appimage_file=$(jq -r '.main.appimage_file // empty' "${json_file}")
-    if [ -n "${appimage_file}" ]; then
-        if [ ! -f "${appimage_file}" ]; then
-            log_warn "appimage_file 指定的文件不存在: ${appimage_file}（將在構建時驗證）"
-        fi
+    # 驗證 src_url（如果提供）
+    local src_url
+    src_url=$(jq -r '.main.src_url // empty' "${json_file}")
+    if [ -n "${src_url}" ]; then
+        validate_url "src_url" "${src_url}"
     fi
 
     # 驗證 icon_url
@@ -283,24 +270,18 @@ output_results() {
         echo "${field}=${value}"
     done
 
-    # 輸出 appimage_file 和 appimage_url（如果提供）
-    local appimage_file
-    appimage_file=$(jq -r '.main.appimage_file // empty' "${json_file}")
-    if [ -n "${appimage_file}" ]; then
-        echo "appimage_file=${appimage_file}"
+    # 輸出 src_url（如果提供）
+    local src_url
+    src_url=$(jq -r '.main.src_url // empty' "${json_file}")
+    if [ -n "${src_url}" ]; then
+        echo "src_url=${src_url}"
     fi
 
-    local appimage_url
-    appimage_url=$(jq -r '.main.appimage_url // empty' "${json_file}")
-    if [ -n "${appimage_url}" ]; then
-        echo "appimage_url=${appimage_url}"
-    fi
-
-    # 輸出 exec_command（如果提供）
-    local exec_command
-    exec_command=$(jq -r '.main.exec_command // empty' "${json_file}")
-    if [ -n "${exec_command}" ]; then
-        echo "exec_command=${exec_command}"
+    # 輸出 binary_name（如果提供）
+    local binary_name
+    binary_name=$(jq -r '.main.binary_name // empty' "${json_file}")
+    if [ -n "${binary_name}" ]; then
+        echo "binary_name=${binary_name}"
     fi
 
     # 輸出 icon_url（如果提供）
@@ -314,7 +295,7 @@ output_results() {
     for field in "${!OPTIONAL_FIELDS[@]}"; do
         # 跳過已在 main 中處理的欄位
         case "${field}" in
-            appimage_file|appimage_url|exec_command|icon_url)
+            src_url|binary_name|icon_url)
                 continue
                 ;;
         esac

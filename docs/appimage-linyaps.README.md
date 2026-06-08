@@ -134,12 +134,11 @@ cp skills/appimage-linyaps/examples/build_config.example.json my_app.json
 ```json
 {
   "main": {
-    "appimage_file": "/path/to/application.AppImage",
-    "appimage_url": "",
+    "src_url": "/path/to/application.AppImage",
     "app_name": "My Application",
     "package_id": "com.example.myapp",
     "description": "A sample application converted from AppImage",
-    "exec_command": "",
+    "binary_name": "",
     "icon_url": ""
   },
   "optional": {
@@ -184,19 +183,18 @@ exec_cmd=$(skills/appimage-linyaps/scripts/resolve_exec_command.sh ./temp/squash
 
 | 参数 | 说明 | 示例 |
 |------|------|------|
-| `appimage_file` | AppImage 本地文件路径 | `/path/to/app.AppImage` |
-| `appimage_url` | AppImage 下载 URL | `https://example.com/app.AppImage` |
+| `src_url` | AppImage 文件路径或下载 URL | `/path/to/app.AppImage` |
 | `app_name` | 应用名称 | `My Application` |
 | `package_id` | 玲珑包 ID（反向域名格式） | `com.example.myapp` |
 | `description` | 应用描述 | `A sample application` |
 
-**注意**：`appimage_file` 和 `appimage_url` 至少需要提供一个。
+**注意**：`src_url` 为必填字段，可为本地路径或下载 URL。
 
 ### 可选参数（main 分组）
 
 | 参数 | 说明 | 默认值 |
 |------|------|--------|
-| `exec_command` | 显式指定 Exec 命令 | 自动提取 |
+| `binary_name` | 显式指定 Exec 命令 | 自动提取 |
 | `icon_url` | 图标下载 URL | 从 AppImage 提取 |
 
 ### 可选参数（optional 分组）
@@ -308,7 +306,7 @@ exec ./AppRun "$@"
 ### 3. Exec 命令提取失败
 **错误**：`无法从 Exec= 中提取命令`
 **解决**：
-- 使用 `exec_command` 参数显式指定
+- 使用 `binary_name` 参数显式指定
 - 检查 desktop 文件格式
 - 查看支持的 Exec 模式
 
@@ -353,7 +351,7 @@ exec ./AppRun "$@"
 ```json
 {
   "main": {
-    "appimage_file": "/path/to/MyApp-1.2.3.AppImage",
+    "src_url": "/path/to/MyApp-1.2.3.AppImage",
     "app_name": "My Application",
     "package_id": "com.example.myapp",
     "description": "My awesome application"
@@ -365,11 +363,11 @@ exec ./AppRun "$@"
 ```json
 {
   "main": {
-    "appimage_file": "/path/to/MyApp-1.2.3.AppImage",
+    "src_url": "/path/to/MyApp-1.2.3.AppImage",
     "app_name": "My Application",
     "package_id": "com.example.myapp",
     "description": "My awesome application",
-    "exec_command": "myapp --gui",
+    "binary_name": "myapp --gui",
     "icon_url": "https://example.com/icon.png"
   },
   "optional": {
@@ -388,7 +386,7 @@ exec ./AppRun "$@"
 ```json
 {
   "main": {
-    "appimage_url": "https://example.com/MyApp-1.2.3.AppImage",
+    "src_url": "https://example.com/MyApp-1.2.3.AppImage",
     "app_name": "My Application",
     "package_id": "com.example.myapp",
     "description": "My awesome application"

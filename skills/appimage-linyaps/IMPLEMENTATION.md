@@ -42,7 +42,7 @@
   - `app_name`：应用名称（从 desktop Name= 提取）
   - `package_id`：玲珑包 ID（从 desktop 文件名推导）
   - `description`：应用描述（从 desktop Comment= 提取）
-  - `exec_command`：Exec 命令（从 desktop Exec= 提取）
+  - `binary_name`：Exec 命令（从 desktop Exec= 提取）
   - `icon_name`：图标名称（从 desktop Icon= 提取）
   - `version`：版本号（从文件名正则提取）
 - **输出格式**：`key=value` 格式，可直接 `eval` 载入
@@ -65,9 +65,9 @@
 #### `examples/build_config.example.json`（22 行）
 - **结构**：分组 JSON（main 必填，optional 可选）
 - **主要字段**：
-  - `appimage_file` 或 `appimage_url`（二选一）
+  - `src_url`：AppImage 文件路径或下载 URL（必填）
   - `app_name`, `package_id`, `description`
-  - `exec_command`（可选覆盖）
+  - `binary_name`（可选覆盖）
   - `icon_url`（可选）
 
 ### 4. 目录结构
@@ -116,7 +116,7 @@ skills/appimage-linyaps/
   --package_id        # 玲珑包 ID
   --app_name          # 应用名称
   --description       # 应用描述
-  --exec_command      # 显式指定 Exec 命令（可选覆盖）
+  --binary_name       # 显式指定 Exec 命令（可选覆盖）
   --icon_path         # 图标路径
   --origin_version    # 原始版本号
   --ll_version        # 玲珑版本号
@@ -180,7 +180,7 @@ exec ./AppRun "$@"
 **策略**：智能提取 + 显式覆盖
 
 **流程**：
-1. 优先使用用户通过 `--exec_command` 显式指定的命令
+1. 优先使用用户通过 `--binary_name` 显式指定的命令
 2. 如果未指定，使用 `resolve_exec_command.sh` 从 desktop 文件提取
 3. 提取失败时，使用 `scan_executables.sh` 扫描可执行文件作为备用
 
