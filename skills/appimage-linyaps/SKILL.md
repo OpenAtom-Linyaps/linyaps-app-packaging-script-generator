@@ -35,14 +35,14 @@ JSON 結構分為 `main`（必填）和 `optional`（可選）兩個分組：
 ```json
 {
   "main": {
-    "appimage_file": "/path/to/application.AppImage",
+    "src_url": "/path/to/application.AppImage",
     "app_name": "My Application",
     "package_id": "com.example.myapp",
     "description": "應用描述",
     "icon_url": "https://example.com/icon.png"
   },
   "optional": {
-    "exec_command": "",
+    "binary_name": "",
     "app_version": "1.0.0",
     "base_id": "org.deepin.base",
     "base_version": "25.2.2",
@@ -62,13 +62,12 @@ JSON 結構分為 `main`（必填）和 `optional`（可選）兩個分組：
 
 | 參數 | 說明 | 必填 | 範例 |
 |------|------|------|------|
-| `appimage_file` | AppImage 本地文件路徑 | ✅ | `/path/to/app.AppImage` |
-| `appimage_url` | AppImage 下載 URL | ✅ | `https://example.com/app.AppImage` |
+| `src_url` | AppImage 文件路徑或下載 URL | ✅ | `/path/to/app.AppImage` |
 | `app_name` | 應用名稱 | ✅ | `My Application` |
 | `package_id` | 玲瓏包 ID（反向域名格式） | ✅ | `com.example.myapp` |
 | `description` | 應用描述 | ✅ | `A sample application` |
 | `icon_url` | icon 下載 URL | ✅ | `https://example.com/icon.png` |
-| `exec_command` | 顯式指定 Exec 命令 | ❌ | `AppRun` |
+| `binary_name` | 顯式指定 Exec 命令 | ❌ | `AppRun` |
 | `app_version` | 版本號 | ❌ | `1.0.0` |
 | `base_id` | base 層 ID | ❌ | `org.deepin.base` |
 | `base_version` | base 層版本 | ❌ | `25.2.2` |
@@ -83,10 +82,10 @@ JSON 結構分為 `main`（必填）和 `optional`（可選）兩個分組：
 
 ```bash
 # 驗證 AppImage 文件格式
-file "${appimage_path}"
+file "${src_path}"
 
 # 使用 extract_appimage.sh 解壓
-"${skill_root}/scripts/extract_appimage.sh" "${appimage_path}" "${extract_dir}"
+"${skill_root}/scripts/extract_appimage.sh" "${src_path}" "${extract_dir}"
 
 # 解壓後生成 squashfs-root/ 目錄
 ls -la "${extract_dir}/squashfs-root"
@@ -98,17 +97,17 @@ ls -la "${extract_dir}/squashfs-root"
 
 ```bash
 # 提取元數據，輸出 key=value 格式
-eval "$("${skill_root}/scripts/parse_appimage_metadata.sh" "${appimage_path}" "${extract_dir}/squashfs-root")"
+eval "$("${skill_root}/scripts/parse_appimage_metadata.sh" "${src_path}" "${extract_dir}/squashfs-root")"
 
 # 載入後可直接使用以下變量：
-# app_name, package_id, description, exec_command, icon_name, version
+# app_name, package_id, description, binary_name, icon_name, version
 ```
 
 **提取邏輯**：
 - `app_name`：從 desktop `Name=` 提取，若為空則從文件名推導
 - `package_id`：從 desktop 文件名推導（反向域名格式），若無法推導則從 `app_name` 生成
 - `description`：從 desktop `Comment=` 提取，若為空則使用默認描述
-- `exec_command`：從 desktop `Exec=` 提取，移除引號和參數佔位符
+- `binary_name`：從 desktop `Exec=` 提取，移除引號和參數佔位符
 - `icon_name`：從 desktop `Icon=` 提取，移除路徑前綴和擴展名
 - `version`：從文件名正則提取，確保 `X.Y.Z.W` 格式
 
@@ -123,8 +122,8 @@ eval "$("${skill_root}/scripts/parse_appimage_metadata.sh" "${appimage_path}" "$
 eval "$(bash "${skill_root}/scripts/parse_build_config.sh" build_config.json)"
 
 # 載入後可直接使用以下變量：
-# 必填（來自 main）：appimage_file/appimage_url, app_name, package_id, description, icon_url
-# 可選（來自 optional）：exec_command, app_version, base_id, base_version,
+# 必填（來自 main）：src_url, app_name, package_id, description, icon_url
+# 可選（來自 optional）：binary_name, app_version, base_id, base_version,
 #                       runtime_id, runtime_version, linyaps_arch, output_dir
 ```
 
@@ -132,20 +131,20 @@ eval "$(bash "${skill_root}/scripts/parse_build_config.sh" build_config.json)"
 - 驗證 JSON 格式和頂層結構（`main` + `optional`）
 - 檢查 `main` 中所有必填欄位是否存在且非空
 - 檢測未知欄位並輸出警告
-- 驗證 `appimage_file` 和 `appimage_url` 至少提供一個
+- 驗證 `src_url` 必填
 - `optional` 中未填寫的欄位自動使用默認值
 - 輸出扁平 `key=value` 格式，可直接 `eval` 載入
 
-**解析成功後**：根據 `exec_command` 是否有值決定後續流程：
-- `exec_command` 有值 → 直接進入 Step 5
-- `exec_command` 為空 → 進入 Step 4 解析 Exec 命令
+**解析成功後**：根據 `binary_name` 是否有值決定後續流程：
+- `binary_name` 有值 → 直接進入 Step 5
+- `binary_name` 為空 → 進入 Step 4 解析 Exec 命令
 
 #### 3b. 交互式參數收集（備選）
 
 若用戶未提供 JSON 配置文件，Agent 交互式收集參數：
-- 確認 `appimage_file`/`appimage_url`、`app_name`、`package_id`、`description`、`icon_url` 等必填項
+- 確認 `src_url`、`app_name`、`package_id`、`description`、`icon_url` 等必填項
 - 詢問可選參數（使用默認值）
-- 收集完成後根據 `exec_command` 決定後續流程
+- 收集完成後根據 `binary_name` 決定後續流程
 
 ### Step 4: 解析 Exec 命令
 
@@ -153,7 +152,7 @@ eval "$(bash "${skill_root}/scripts/parse_build_config.sh" build_config.json)"
 
 ```bash
 # 從 squashfs-root 中的 desktop 文件提取 Exec 命令
-exec_command=$("${skill_root}/scripts/resolve_exec_command.sh" "${extract_dir}/squashfs-root")
+binary_name=$("${skill_root}/scripts/resolve_exec_command.sh" "${extract_dir}/squashfs-root")
 ```
 
 **支持的 Exec 模式**：
@@ -339,7 +338,7 @@ fi
 ```
 main()
   ├─ init_global_data()        # 解析命令行參數
-  ├─ data_regroup_check()      # 驗證 appimage_path、版本處理、輸出目錄
+  ├─ data_regroup_check()      # 驗證 src_path、版本處理、輸出目錄
   ├─ build_dir_init()          # 準備構建環境
   │   ├─ 複製 files_res/ 到 build_tmp_dir
   │   ├─ 複製 scripts/*.sh 到 build_tmp_dir/scripts/
@@ -403,7 +402,7 @@ AppImage 版本使用特殊的 wrapper 機制：
    - base/runtime **只能**由 `build_pak()` 在構建時透過 `sed` 延遲注入
    - 用戶通過 `--base_id`/`--runtime_id` CLI 參數動態指定
 7. **🚫 禁止干預 ll-builder 構建**：SKILL 層面（Step 1-7）只負責資源收集和工程準備，不得在 SKILL 執行過程中調用 `ll-builder` 或修改構建流程
-8. **pak_linyaps.sh 是完整構建腳本**：用戶執行 `bash pak_linyaps.sh --appimage_path ... --package_id ...` 後，腳本自動完成從解壓到 .layer 導出的全部流程，無需手動干預
+8. **pak_linyaps.sh 是完整構建腳本**：用戶執行 `bash pak_linyaps.sh --src_path ... --package_id ...` 後，腳本自動完成從解壓到 .layer 導出的全部流程，無需手動干預
 9. **構建環境隔離**：`build_tmp_dir` 作為構建沙箱，所有中間產物在其中生成，構建完成後可自動清理
 10. **AppImage 特殊處理**：
     - 使用 `extract_appimage.sh` 解壓（而非 tar -xf）

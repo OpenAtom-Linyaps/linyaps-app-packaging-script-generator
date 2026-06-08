@@ -616,15 +616,15 @@ bash skills/tar-linyaps/templates/pak_linyaps.sh \
 
 ### 调用 appimage-linyaps 解析脚本
 ```bash
-bash skills/appimage-linyaps/scripts/extract_appimage.sh <appimage_file> <extract_dir>
+bash skills/appimage-linyaps/scripts/extract_appimage.sh <src_path> <extract_dir>
 bash skills/appimage-linyaps/scripts/resolve_exec_command.sh <extract_dir>
-bash skills/appimage-linyaps/scripts/parse_appimage_metadata.sh <appimage_file>
+bash skills/appimage-linyaps/scripts/parse_appimage_metadata.sh <src_path>
 ```
 
 ### 执行打包脚本（AppImage 版）
 ```bash
 bash skills/appimage-linyaps/templates/pak_linyaps.sh \
-  --appimage_file <appimage_file> \
+  --src_path <src_path> \
   --package_id <package_id> \
   --app_name "My Application" \
   --ll_version 1.0.0
