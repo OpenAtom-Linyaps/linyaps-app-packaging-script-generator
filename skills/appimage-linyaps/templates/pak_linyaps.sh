@@ -384,6 +384,12 @@ validate_required_fields() {
 	if [ -z "${linyaps_arch}" ]; then
 		linyaps_arch=$(uname -m)
 	fi
+
+	# package_id 用於 wrapper 檔案名和 lib 目錄前綴，若未指定則發出警告
+	# fallback 鏈在 build_pak() 中處理：package_id -> binary_name -> app_name -> "app"
+	if [ -z "${package_id}" ]; then
+		echo "警告: --package_id 未指定，wrapper 前綴將從 binary_name/app_name 推導" >&2
+	fi
 }
 
 # 數據重新組裝檢查
@@ -461,8 +467,12 @@ build_pak() {
 	mkdir -p "${binary_dir}"
 
 	# 將 squashfs-root 保持原始結構，安裝到 lib/${APP_PREFIX}/
-	# APP_PREFIX 使用 package_id 的簡化形式
-	local app_prefix="${package_id}"
+	# APP_PREFIX 優先使用 package_id，fallback 到 binary_name -> app_name -> "app"
+	local app_prefix="${package_id:-${binary_name:-${app_name:-app}}}"
+	if [ -z "${app_prefix}" ]; then
+		echo "錯誤: 無法確定 app_prefix（package_id/binary_name/app_name 均為空）" >&2
+		exit 1
+	fi
 	mkdir -p "${binary_dir}/lib/${app_prefix}"
 	cp -rf "${binary_tmp_dir}/squashfs-root"/* "${binary_dir}/lib/${app_prefix}/"
 
