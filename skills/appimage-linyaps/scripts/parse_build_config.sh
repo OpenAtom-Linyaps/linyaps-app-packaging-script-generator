@@ -20,14 +20,13 @@ set -euo pipefail
 #=============================================================================
 
 # 必填欄位列表（main 分組）
-# 注意：src_url 為必填（AppImage 文件路徑或下載 URL）
-REQUIRED_FIELDS=("src_url" "app_name" "package_id" "description")
+# 注意：src_url 為必填（AppImage 文件路徑或下載 URL），但由 output_results 單獨處理並映射為 src_path
+REQUIRED_FIELDS=("app_name" "package_id" "description")
 
 # 可選欄位列表（optional 分組，含默認值，空字串表示無默認值）
+# 注意：src_url 和 icon_url 由 output_results 單獨處理並映射為 src_path/icon_path
 declare -A OPTIONAL_FIELDS=(
-    ["src_url"]=""
     ["binary_name"]=""
-    ["icon_url"]=""
     ["app_version"]=""
     ["base_id"]="org.deepin.base"
     ["base_version"]="25.2.2"
@@ -270,11 +269,11 @@ output_results() {
         echo "${field}=${value}"
     done
 
-    # 輸出 src_url（如果提供）
+    # 輸出 src_path（JSON 欄位為 src_url，映射為 CLI 的 --src_path）
     local src_url
     src_url=$(jq -r '.main.src_url // empty' "${json_file}")
     if [ -n "${src_url}" ]; then
-        echo "src_url=${src_url}"
+        echo "src_path=${src_url}"
     fi
 
     # 輸出 binary_name（如果提供）
@@ -284,18 +283,18 @@ output_results() {
         echo "binary_name=${binary_name}"
     fi
 
-    # 輸出 icon_url（如果提供）
+    # 輸出 icon_path（JSON 欄位為 icon_url，映射為 CLI 的 --icon_path）
     local icon_url
     icon_url=$(jq -r '.main.icon_url // empty' "${json_file}")
     if [ -n "${icon_url}" ]; then
-        echo "icon_url=${icon_url}"
+        echo "icon_path=${icon_url}"
     fi
 
     # 輸出 optional 欄位（JSON 中有值則使用，否則使用默認值）
     for field in "${!OPTIONAL_FIELDS[@]}"; do
         # 跳過已在 main 中處理的欄位
         case "${field}" in
-            src_url|binary_name|icon_url)
+            binary_name)
                 continue
                 ;;
         esac

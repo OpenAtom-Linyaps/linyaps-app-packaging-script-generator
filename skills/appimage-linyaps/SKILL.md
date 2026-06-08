@@ -62,11 +62,11 @@ JSON 結構分為 `main`（必填）和 `optional`（可選）兩個分組：
 
 | 參數 | 說明 | 必填 | 範例 |
 |------|------|------|------|
-| `src_url` | AppImage 文件路徑或下載 URL | ✅ | `/path/to/app.AppImage` |
+| `src_path` | AppImage 文件路徑或下載 URL | ✅ | `/path/to/app.AppImage` |
 | `app_name` | 應用名稱 | ✅ | `My Application` |
 | `package_id` | 玲瓏包 ID（反向域名格式） | ✅ | `com.example.myapp` |
 | `description` | 應用描述 | ✅ | `A sample application` |
-| `icon_url` | icon 下載 URL | ✅ | `https://example.com/icon.png` |
+| `icon_path` | icon 下載 URL 或本地路徑 | ✅ | `https://example.com/icon.png` |
 | `binary_name` | 顯式指定 Exec 命令 | ❌ | `AppRun` |
 | `app_version` | 版本號 | ❌ | `1.0.0` |
 | `base_id` | base 層 ID | ❌ | `org.deepin.base` |
@@ -122,7 +122,7 @@ eval "$("${skill_root}/scripts/parse_appimage_metadata.sh" "${src_path}" "${extr
 eval "$(bash "${skill_root}/scripts/parse_build_config.sh" build_config.json)"
 
 # 載入後可直接使用以下變量：
-# 必填（來自 main）：src_url, app_name, package_id, description, icon_url
+# 必填（來自 main，已映射為 CLI 名稱）：src_path, app_name, package_id, description, icon_path
 # 可選（來自 optional）：binary_name, app_version, base_id, base_version,
 #                       runtime_id, runtime_version, linyaps_arch, output_dir
 ```
@@ -131,7 +131,7 @@ eval "$(bash "${skill_root}/scripts/parse_build_config.sh" build_config.json)"
 - 驗證 JSON 格式和頂層結構（`main` + `optional`）
 - 檢查 `main` 中所有必填欄位是否存在且非空
 - 檢測未知欄位並輸出警告
-- 驗證 `src_url` 必填
+- 驗證 `src_url` 必填（映射為 `src_path`）
 - `optional` 中未填寫的欄位自動使用默認值
 - 輸出扁平 `key=value` 格式，可直接 `eval` 載入
 
@@ -142,7 +142,7 @@ eval "$(bash "${skill_root}/scripts/parse_build_config.sh" build_config.json)"
 #### 3b. 交互式參數收集（備選）
 
 若用戶未提供 JSON 配置文件，Agent 交互式收集參數：
-- 確認 `src_url`、`app_name`、`package_id`、`description`、`icon_url` 等必填項
+- 確認 `src_path`、`app_name`、`package_id`、`description`、`icon_path` 等必填項
 - 詢問可選參數（使用默認值）
 - 收集完成後根據 `binary_name` 決定後續流程
 
