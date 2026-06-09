@@ -25,3 +25,4 @@ build: |
 
   # Add an identity for LLM
   touch ${prefix}/.linyaps_genius
+  chmod -R 755 ${prefix}
