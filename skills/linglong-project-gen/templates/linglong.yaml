@@ -5,13 +5,13 @@
 version: "${ll_version}"
 
 package:
-  id: com.visualstudio.code
-  name: "Visual Studio Code"
+  id: ${package_id}
+  name: "${app_name}"
   version: ${ll_version}
   kind: app
   architecture: ${linyaps_arch}
   description: |
-    Code Editing. Redefined.
+    ${description}
 
 base: ""
 runtime: ""
