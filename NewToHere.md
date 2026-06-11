@@ -1,6 +1,11 @@
 # 新人必看
 这是一个开箱即用的agent, 目前已支持通过deb、含二进制的tar压缩包转换为玲珑应用. 你在安装`Release`页面专用`linglong-bin`和`linglong-builder`后即可根据此文档开始使用
 
+## 需要安装的依赖包
+```bash
+python3-yaml
+```
+
 ## 工作流程
 1. 使用者切换agent至`linyaps-app-packaging-script-generator`
 2. 使用者通过json任务列表等方式注入需要生成玲珑应用打包脚本的提示词
