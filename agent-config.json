@@ -9,6 +9,18 @@
     "build_tmp_dir": "./build_cache",
     "src_dir": "./src"
   },
+  "extension": [
+    {
+      "id": "arch_mapping",
+      "description": "URL 架構關鍵字到 linyaps arch 的映射表，用於從下載 URL 中識別並轉換目標架構",
+      "path": ""
+    },
+    {
+      "id": "base_runtime_whitelist",
+      "description": "玲瓏 base/runtime 全局白名單，定義所有已知合規的 base/runtime 組合，用於驗證和生成階段的組合檢查",
+      "path": ""
+    }
+  ],
   "version_extract_examples": [
     {
       "description": "Firefox tar.xz release",
