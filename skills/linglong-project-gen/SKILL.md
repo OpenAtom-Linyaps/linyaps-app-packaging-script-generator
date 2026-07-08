@@ -80,6 +80,12 @@ mkdir -p "${project_dir}/config"
 cp "scripts/handle_special_paths.sh" "${project_dir}/scripts/"
 chmod +x "${project_dir}/scripts/handle_special_paths.sh"
 
+# 拷贝入口脚本分析器（用于检测使用 $1/$2 的风险脚本）
+if [ -f "templates/scripts/analyze_entry_script.sh" ]; then
+  cp "templates/scripts/analyze_entry_script.sh" "${project_dir}/scripts/"
+  chmod +x "${project_dir}/scripts/analyze_entry_script.sh"
+fi
+
 # 拷贝白名单配置文件（优先使用全局白名单）
 if [ -f "${skill_root}/../config/base_runtime_whitelist.conf" ]; then
   cp "${skill_root}/../config/base_runtime_whitelist.conf" "${project_dir}/config/"
