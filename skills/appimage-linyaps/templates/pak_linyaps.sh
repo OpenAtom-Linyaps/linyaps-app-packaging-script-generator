@@ -523,6 +523,21 @@ build_pak() {
 		wrapper_target="${resolved_exec}"
 	fi
 
+	# 檢測 wrapper_target 是否為有風險的腳本（使用 $1/$2 等位置參數）
+	# 若是，則在後續 desktop Exec 更新中過濾掉非 freedesktop 佔位符參數
+	# 防止 dde-application-manager 注入 --no-sandbox 等參數導致 AppRun 崩潰
+	local has_risk=false
+	local target_path="${binary_dir}/lib/${app_prefix}/${wrapper_target}"
+	local analyzer_script="${project_root}/scripts/analyze_entry_script.sh"
+	if [ -f "${target_path}" ] && [ -f "${analyzer_script}" ]; then
+		local analyze_result
+		analyze_result=$("${analyzer_script}" "${target_path}" 2>/dev/null || echo '{"is_script":false,"has_positional_params":false,"risk_level":"low"}')
+		has_risk=$(echo "${analyze_result}" | python3 -c "import sys,json; d=json.load(sys.stdin); print('true' if d.get('is_script') and d.get('has_positional_params') else 'false')" 2>/dev/null || echo "false")
+		if [ "${has_risk}" = "true" ]; then
+			echo "⚠ 檢測到 ${wrapper_target} 使用位置參數 (\$1/\$2...)，將在 desktop Exec 中過濾非 freedesktop 參數"
+		fi
+	fi
+
 	# 創建 wrapper 腳本
 	# wrapper 位於 bin/ 目錄，使用相對路徑直接指向 lib/ 下的二進制
 	# 始終使用相對路徑 exec，不使用 cd（遵循 wrapper 設計原則）
@@ -565,6 +580,22 @@ WRAPPER_EOF
 			# 提取第一個參數（二進制名/路徑）和其餘參數
 			exec_bin=$(echo "${exec_value}" | awk '{print $1}')
 			exec_args=$(echo "${exec_value}" | awk '{$1=""; print $0}' | sed 's/^ //')
+			# 若檢測到有風險的腳本，過濾掉非 freedesktop 佔位符參數
+			# 防止 --no-sandbox 等參數通過 desktop 文件流入腳本的 $1
+			if [ "${has_risk}" = "true" ] && [ -n "${exec_args}" ]; then
+				local filtered_args=""
+				for arg in ${exec_args}; do
+					case "${arg}" in
+						%[UuFfickDdNn])
+							filtered_args="${filtered_args} ${arg}"
+							;;
+						*)
+							echo "  過濾掉風險參數: ${arg}"
+							;;
+					esac
+				done
+				exec_args="${filtered_args# }"
+			fi
 			# 替換為 wrapper
 			new_exec="Exec=${app_prefix}.wrapper"
 			if [ -n "${exec_args}" ]; then

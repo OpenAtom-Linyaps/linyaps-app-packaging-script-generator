@@ -655,6 +655,20 @@ build_pak() {
 			# 計算相對於 binary/ 的路徑
 			rel_binary="${real_binary#${binary_dir}}"
 
+			# 檢測 binary 是否為有風險的腳本（使用 $1/$2 等位置參數）
+			# 若是，則在後續 desktop Exec 更新中過濾掉非 freedesktop 佔位符參數
+			# 防止 dde-application-manager 注入 --no-sandbox 等參數導致腳本崩潰
+			local has_risk=false
+			local analyzer_script="${project_root}/scripts/analyze_entry_script.sh"
+			if [ -f "${real_binary}" ] && [ -f "${analyzer_script}" ]; then
+				local analyze_result
+				analyze_result=$("${analyzer_script}" "${real_binary}" 2>/dev/null || echo '{"is_script":false,"has_positional_params":false,"risk_level":"low"}')
+				has_risk=$(echo "${analyze_result}" | python3 -c "import sys,json; d=json.load(sys.stdin); print('true' if d.get('is_script') and d.get('has_positional_params') else 'false')" 2>/dev/null || echo "false")
+				if [ "${has_risk}" = "true" ]; then
+					echo "⚠ 檢測到 ${binary_name} (${real_binary}) 使用位置參數 (\$1/\$2...)，將在 desktop Exec 中過濾非 freedesktop 參數"
+				fi
+			fi
+
 			# 创建 wrapper 脚本
 			# wrapper 位于 bin/ 目录，使用相对路径直接指向原始二进制
 			# 文件名使用 .wrapper 后缀，避免与原始二进制名冲突
@@ -689,12 +703,43 @@ WRAPPER_EOF
 			# 更新 desktop 文件的 Exec= 字段
 			# 将 Exec= 中的二进制路径替换为 wrapper 路径
 			# 处理 files_res/ 和 binary/ 中的所有 desktop 文件
+			# 同时检测风险脚本，过滤非 freedesktop 占位符参数
 			for desktop_file in $(find "${build_tmp_dir}" -name "*.desktop" -type f 2>/dev/null); do
 				if grep -q "Exec=.*${binary_name}" "${desktop_file}"; then
-					# 替换 Exec= 行中的二进制路径为 wrapper 路径
-					# wrapper 位于 bin/ 目录，直接使用二进制名称即可
-					# 保留 Exec= 后的参数（如 %F, %U 等）
-					sed -i "s|Exec=[^ ]*${binary_name}[^ ]*|Exec=${binary_name}.wrapper|g" "${desktop_file}"
+					local tmp_file="${desktop_file}.tmp"
+					> "${tmp_file}"
+					while IFS= read -r line; do
+						if [[ "${line}" == Exec=*${binary_name}* ]]; then
+							exec_value="${line#Exec=}"
+							# 移除 env VAR=val 前缀
+							exec_value=$(echo "${exec_value}" | sed 's/^env \(\S*=\S*\s\)*//')
+							exec_bin=$(echo "${exec_value}" | awk '{print $1}')
+							exec_args=$(echo "${exec_value}" | awk '{$1=""; print $0}' | sed 's/^ //')
+							# 若检测到有风险的脚本，过滤掉非 freedesktop 占位符参数
+							if [ "${has_risk}" = "true" ] && [ -n "${exec_args}" ]; then
+								local filtered_args=""
+								for arg in ${exec_args}; do
+									case "${arg}" in
+										%[UuFfickDdNn])
+											filtered_args="${filtered_args} ${arg}"
+											;;
+										*)
+											echo "  过滤掉风险参数: ${arg}"
+											;;
+									esac
+								done
+								exec_args="${filtered_args# }"
+							fi
+							new_exec="Exec=${binary_name}.wrapper"
+							if [ -n "${exec_args}" ]; then
+								new_exec="${new_exec} ${exec_args}"
+							fi
+							echo "${new_exec}" >> "${tmp_file}"
+						else
+							echo "${line}" >> "${tmp_file}"
+						fi
+					done < "${desktop_file}"
+					mv "${tmp_file}" "${desktop_file}"
 					echo "Updated Exec= in: ${desktop_file}"
 				fi
 			done
