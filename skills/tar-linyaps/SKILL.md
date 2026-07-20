@@ -299,6 +299,10 @@ sed -i "s|\${description}|${description}|g" "${project_dir}/templates/linglong.y
 cp "${skill_root}/scripts/scan_executables.sh" "${project_dir}/scripts/"
 chmod +x "${project_dir}/scripts/scan_executables.sh"
 
+# 拷貝入口腳本分析器（用於檢測使用 $1/$2 的風險腳本）
+cp "${skill_root}/scripts/analyze_entry_script.sh" "${project_dir}/scripts/"
+chmod +x "${project_dir}/scripts/analyze_entry_script.sh"
+
 # 拷貝路徑處理腳本（與 deb 版共用，處理 /usr/、/opt/ 等路徑轉換 + 特殊字符標準化）
 cp "${skill_root}/../linglong-project-gen/templates/scripts/handle_special_paths.sh" "${project_dir}/scripts/"
 chmod +x "${project_dir}/scripts/handle_special_paths.sh"
@@ -333,6 +337,7 @@ fi
 | Step 5: 自動掃描 | tar-linyaps skill | 僅在無 desktop Exec 時掃描可執行檔 |
 | Step 4/5: 資源收集 | tar-linyaps skill | 只修復 Icon 路徑，**不修改** Exec 欄位 |
 | Step 7: 工程生成 | tar-linyaps skill | 準備 templates/、scripts/、config/ 目錄結構 |
+| 構建時 | pak_linyaps.sh | 入口腳本風險檢測（analyze_entry_script.sh） |
 | 構建時 | pak_linyaps.sh | 創建 wrapper 腳本（binary/bin/*.wrapper） |
 | 構建時 | pak_linyaps.sh | 更新 linglong.yaml 的 command（sed 替換為數組格式） |
 | 構建時 | pak_linyaps.sh | 更新 linglong.yaml 的 base/runtime（sed 延遲注入） |
@@ -363,6 +368,7 @@ main()
   │   ├─ tar -xf 解壓
   │   ├─ handle_special_paths.sh 路徑轉換
   │   ├─ 自動偵測 binary_name（desktop → scan_executables.sh）
+  │   ├─ 入口腳本風險檢測（analyze_entry_script.sh）
   │   ├─ 創建 wrapper 腳本（binary/bin/*.wrapper）
   │   ├─ 更新 linglong.yaml command + base/runtime + desktop Exec
   │   ├─ dedup_desktop_files.sh 兩步去重
