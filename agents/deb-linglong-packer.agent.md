@@ -34,9 +34,29 @@ permission:
     "build_tmp_dir": "<構建緩存目錄>",
     "src_dir": "<資源下載目錄>"
   },
+  "extension": [
+    {
+      "id": "<拓展標識符>",
+      "description": "<LLM 可識別的自然語言描述，說明用途和使用場景>",
+      "path": "<外部配置文件的絕對路徑>"
+    }
+  ],
   "version_extract_examples": [ ... ]
 }
 ```
+
+**`extension` 區段說明**：
+`extension` 用於管理所有全局拓展配置，agent-config **只做引用聲明，不嵌入具體內容**。每個條目包含：
+- **`id`**：拓展標識符，用於程式化引用
+- **`description`**：LLM 可識別的自然語言描述，說明該配置的用途和適用場景
+- **`path`**：外部配置文件的**絕對路徑**，LLM 或腳本可直接讀取
+
+**當前 extension 清單**：
+
+| id | 描述 | path |
+|----|------|------|
+| `arch_mapping` | URL 架構關鍵字到 linyaps arch 的映射表，用於從下載 URL 中識別並轉換目標架構 | `skills/config/arch_mapping.json` |
+| `base_runtime_whitelist` | 玲瓏 base/runtime 全局白名單，定義所有已知合規的 base/runtime 組合，用於驗證和生成階段的組合檢查 | `skills/config/base_runtime_whitelist.conf` |
 
 **當前值**詳見 `agent-config.json` 的對應區段。
 
