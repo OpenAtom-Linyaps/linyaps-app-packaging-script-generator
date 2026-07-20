@@ -287,6 +287,7 @@ cp "${skill_root}/scripts/extract_appimage.sh" "${project_dir}/scripts/"
 cp "${skill_root}/scripts/resolve_exec_command.sh" "${project_dir}/scripts/"
 cp "${skill_root}/scripts/parse_appimage_metadata.sh" "${project_dir}/scripts/"
 cp "${skill_root}/scripts/parse_build_config.sh" "${project_dir}/scripts/"
+cp "${skill_root}/scripts/analyze_entry_script.sh" "${project_dir}/scripts/"
 cp "${skill_root}/scripts/dedup_desktop_files.sh" "${project_dir}/scripts/"
 cp "${skill_root}/scripts/validate_bin_nesting.sh" "${project_dir}/scripts/"
 chmod +x "${project_dir}/scripts/"*.sh
@@ -326,6 +327,7 @@ fi
 | Step 6: 資源收集 | appimage-linyaps skill | 複製 desktop 和 icon 到 files_res |
 | Step 7: 工程生成 | appimage-linyaps skill | 準備 templates/、scripts/、config/ 目錄結構 |
 | 構建時 | pak_linyaps.sh | 解壓 AppImage（extract_appimage.sh） |
+| 構建時 | pak_linyaps.sh | 入口腳本風險檢測（analyze_entry_script.sh） |
 | 構建時 | pak_linyaps.sh | 保持 squashfs-root 原始結構（lib/${APP_PREFIX}/） |
 | 構建時 | pak_linyaps.sh | 創建 wrapper 腳本（AppRun 優先策略，bin/${APP_PREFIX}.wrapper） |
 | 構建時 | pak_linyaps.sh | 更新 linglong.yaml 的 command（sed 替換為數組格式） |
@@ -360,6 +362,7 @@ main()
   │   │   ├─ 檢測 AppRun 是否存在 → wrapper_target="AppRun"
   │   │   ├─ 檢測 AppRun.wrapped → wrapper_target="AppRun.wrapped"
   │   │   └─ Fallback: resolve_exec_command.sh 解析 desktop Exec
+  │   ├─ 入口腳本風險檢測（analyze_entry_script.sh）
   │   ├─ 創建 wrapper 腳本（bin/${APP_PREFIX}.wrapper）
   │   │   └─ exec "${script_dir}/../lib/${APP_PREFIX}/${wrapper_target}" "$@"
   │   ├─ 更新 linglong.yaml command + base/runtime + desktop Exec
