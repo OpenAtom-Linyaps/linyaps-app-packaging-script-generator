@@ -139,6 +139,27 @@ print(f'Status: {\"passed\" if success else \"failed\"}, Message: {message}')
 }
 ```
 
+### 构建元数据 (`reports/<pkg>/build_meta.json`)
+
+步骤 3（构建测试）完成后自动生成，供 `bin2linyaps.external-missing-deps-fetch` 上游流程使用：
+
+```json
+{
+  "build_tmp_dir": "/path/to/build_cache/CI_ll_com.example.app",
+  "project_dir": "/path/to/projects/CI_ll_com.example.app",
+  "missing_deps_json": "/path/to/build_cache/CI_ll_com.example.app/missing_deps.json",
+  "missing_deps_csv": null
+}
+```
+
+字段说明：
+- `build_tmp_dir`：`pak_linyaps.sh` 实际使用的构建临时目录（`ll-builder build` 执行位置）
+- `project_dir`：玲珑工程目录
+- `missing_deps_json`：若构建生成了 `missing_deps.json`，则为该文件路径；否则为 `null`
+- `missing_deps_csv`：若构建生成了 `missing_deps.csv`，则为该文件路径；否则为 `null`
+
+此文件是 `bin2linyaps.external-missing-deps-fetch` 的输入依据：`fetch_missing_deps.sh` 通过 `--build-tmp-dir` 从 `build_tmp_dir` 读取 `missing_deps.*`，并将修复写入 `templates/linglong.yaml`。
+
 ### 汇总报告 (`reports/summary.json`)
 
 ```json

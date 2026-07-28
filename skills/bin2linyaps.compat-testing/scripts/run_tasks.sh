@@ -436,9 +436,36 @@ run_task() {
     build_result=$(step3_build_test "$project_dir" "$arch" "$orig_version" "$src_path" "$OUTPUT_DIR" "$BUILD_TMP_DIR" "$task_reports_dir/build.log") || true
     build_result="${build_result:-{\"step\":\"build_test\",\"status\":\"failed\",\"error\":\"step3 exception\"}}"
 
+    # ========== 步骤3b: 生成构建元数据 ==========
+    log_info "--- 步骤3b/5: 生成构建元数据 ---"
+    local task_build_dir="$BUILD_TMP_DIR/$(basename "$project_dir")"
+    local md_json="${task_build_dir}/missing_deps.json"
+    local md_csv="${task_build_dir}/missing_deps.csv"
+    local md_json_path="null"
+    local md_csv_path="null"
+    [ -f "$md_json" ] && md_json_path="\"${md_json}\""
+    [ -f "$md_csv" ] && md_csv_path="\"${md_csv}\""
+    python3 -c "
+import json
+meta = {
+    'build_tmp_dir': '${task_build_dir}',
+    'project_dir': '${project_dir}',
+    'missing_deps_json': ${md_json_path},
+    'missing_deps_csv': ${md_csv_path}
+}
+with open('${task_reports_dir}/build_meta.json', 'w') as f:
+    json.dump(meta, f, indent=2)
+" 2>/dev/null || true
+    if [ -f "${task_reports_dir}/build_meta.json" ]; then
+        log_info "构建元数据: ${task_reports_dir}/build_meta.json"
+        if [ -f "$md_json" ] || [ -f "$md_csv" ]; then
+            log_info "发现 missing_deps 文件，可由 external-missing-deps-fetch 后续处理"
+        fi
+    fi
+
     # ========== 步骤4: 兼容性检测 ==========
     log_info "--- 步骤4/5: 兼容性检测 ---"
-    local task_build_dir="$BUILD_TMP_DIR/$(basename "$project_dir")"
+    task_build_dir="$BUILD_TMP_DIR/$(basename "$project_dir")"
     local compat_result
     compat_result=$(step4_compat_check "$task_build_dir" "$task_reports_dir/compat_result.json") || true
     compat_result="${compat_result:-{\"step\":\"compat_check\",\"status\":\"failed\",\"error\":\"step4 exception\"}}"
