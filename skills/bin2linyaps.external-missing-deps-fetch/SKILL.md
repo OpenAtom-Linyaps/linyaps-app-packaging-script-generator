@@ -11,7 +11,9 @@ user-invocable: false
 
 ## 功能说明
 
-分析玲珑构建过程中生成的缺失依赖报告（`missing_deps.json` 或 `missing_deps.csv`），对每个缺失的 `.so` 文件通过 `apt-file` 反向查找所属包名，将包名追加到 `templates/linglong.yaml` 的 `buildext.apt.depends` 中（保留 `${ll_version}` 等 envsubst 变量），同时获取对应 deb 包的下载 URL，生成外置配置文件 `missing_deps_urls.conf` 和下载解压脚本 `download_missing_deps.sh`。
+分析玲珑构建过程中生成的缺失依赖报告（`missing_deps.json` 或 `missing_deps.csv`），对每个缺失的 `.so` 文件通过 `apt-file` 反向查找所属包名，将包名追加到 `templates/linglong.yaml` 的 `buildext.apt.depends` 中（保留 `${ll_version}` 等 envsubst 变量），同时生成外置配置文件 `missing_deps_urls.conf`。
+项目初始化时，静态脚本 `scripts/download_missing_deps.sh` 会被复制到项目 `scripts/` 目录，
+由 `pak_linyaps.sh` 在构建时调用，解析 `missing_deps_urls.conf` 并下载解压 deb 包。
 
 ## 关键约束
 
@@ -28,8 +30,9 @@ user-invocable: false
 ## 目录约定
 
 - 主脚本：`scripts/fetch_missing_deps.sh`
+- 静态下载脚本：`scripts/download_missing_deps.sh`（由项目初始化时复制到项目 `scripts/` 目录）
 - 模板文件（待修改）：`<project_dir>/templates/linglong.yaml`
-- 生成文件：`<project_dir>/missing_deps_urls.conf`、`<project_dir>/download_missing_deps.sh`
+- 生成文件：`<project_dir>/missing_deps_urls.conf`
 
 ## 输入
 
@@ -53,7 +56,7 @@ bash skills/bin2linyaps.external-missing-deps-fetch/scripts/fetch_missing_deps.s
 | 4 | apt-file 并行搜索包名 | `xargs -P $(nproc)` + `apt-file search -x` |
 | 5 | 更新 `<project_dir>/templates/linglong.yaml` | `ruamel.yaml` 追加 `buildext.apt.depends`，保留 envsubst 变量 |
 | 6 | 获取 deb 下载 URL | `apt-get download --print-uris` |
-| 7 | 生成 `missing_deps_urls.conf` + `download_missing_deps.sh` | 生成到 `<project_dir>/` |
+| 7 | 生成 `missing_deps_urls.conf` | 生成到 `<project_dir>/` |
 | 8 | 输出摘要 | 包数、so 数、生成文件路径 |
 
 ## 输出产物
@@ -62,7 +65,7 @@ bash skills/bin2linyaps.external-missing-deps-fetch/scripts/fetch_missing_deps.s
 |------|------|------|
 | 更新后的 `templates/linglong.yaml` | `<project_dir>/templates/linglong.yaml` | `buildext.apt.depends` 追加了新包名，保留 `${ll_version}` 等变量 |
 | `missing_deps_urls.conf` | `<project_dir>/missing_deps_urls.conf` | 外置 URL 配置，可人工编辑 |
-| `download_missing_deps.sh` | `<project_dir>/download_missing_deps.sh` | 通用下载解压脚本 |
+| `download_missing_deps.sh` | 静态脚本，由项目初始化时复制到 `<project_dir>/scripts/` | 通用下载解压脚本，读取 conf 执行下载解压 |
 
 ## 错误处理
 
@@ -86,14 +89,15 @@ bash skills/bin2linyaps.external-missing-deps-fetch/scripts/fetch_missing_deps.s
 | `apt-file` | so → 包名反向查找 | 需 `apt-file update` |
 | `python3` + `ruamel.yaml` | 修改 linglong.yaml | 保留 YAML 格式和 envsubst 变量 |
 | `apt-get` | 获取 deb 下载 URL | `download --print-uris` |
-| `wget` | 下载 deb | 用于生成的下载脚本 |
-| `dpkg` | 解压 deb | 用于生成的下载脚本 |
+| `wget` | 下载 deb | 用于静态下载脚本 `download_missing_deps.sh` |
+| `dpkg` | 解压 deb | 用于静态下载脚本 `download_missing_deps.sh` |
 
 ## 注意事项
 
 1. **目标文件确认**：脚本只修改 `<project_dir>/templates/linglong.yaml`，该文件包含 `${ll_version}` 等 envsubst 变量。
 2. **绝不修改 build_tmp 文件**：`build_tmp_dir/linglong.yaml` 是 `pak_linyaps.sh` 通过 `envsubst` 生成的瞬态副本，任何修改都会在下次构建时被覆盖。
 3. `missing_deps.*` 由 `ll-builder build` 在 `build_tmp_dir` 中生成，需通过 `--build-tmp-dir` 参数传入。
-4. 生成的 `missing_deps_urls.conf` 中的 URL 可人工编辑后重新运行 `download_missing_deps.sh`。
-5. `download_missing_deps.sh` 默认解压到 `<project_dir>/binary_dir`，可通过参数指定。
-6. 多次运行会自动去重，不会重复追加已存在的包名。
+4. 生成的 `missing_deps_urls.conf` 中的 URL 可人工编辑后重新运行 `download_missing_deps.sh`（位于项目 `scripts/` 目录下的静态脚本）。
+5. `download_missing_deps.sh` 默认解压到 `<project_dir>/binary_dir`，可通过位置参数指定目标目录。
+6. `download_missing_deps.sh` 是静态脚本，由项目初始化时复制到项目 `scripts/` 目录，不依赖 `fetch_missing_deps.sh` 是否执行过。用户手动创建 `missing_deps_urls.conf` 后，`pak_linyaps.sh` 可直接调用它下载解压。
+7. 多次运行会自动去重，不会重复追加已存在的包名。
