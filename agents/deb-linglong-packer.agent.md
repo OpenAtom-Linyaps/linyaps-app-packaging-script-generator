@@ -201,7 +201,7 @@ permission:
 | bin2linyaps.appimage.transfer | `skills/bin2linyaps.appimage.transfer/` | `scripts/extract_appimage.sh`, `scripts/resolve_exec_command.sh`, `scripts/parse_appimage_metadata.sh` | `templates/pak_linyaps.sh`, `templates/linglong.yaml` |
 | bin2linyaps.deb.collect-resources | `skills/bin2linyaps.deb.collect-resources/` | —（純 SKILL.md 指導型，無腳本） | — |
 | bin2linyaps.validate-structure | `skills/bin2linyaps.validate-structure/` | `scripts/validate_project_structure.sh` | — |
-| bin2linyaps.compat-testing | `skills/bin2linyaps.compat-testing/` | `scripts/common-data-verify.py`, `scripts/validate_linglong_yaml.py` | `scripts/demos/compat_checker.py` |
+| bin2linyaps.compat-testing | `skills/bin2linyaps.compat-testing/` | `scripts/run_tasks.sh`（编排入口）, `scripts/validate_projects.sh`（前置检测） | `scripts/validate_linglong_yaml.py`, `scripts/common-data-verify.py`, `scripts/demos/compat_checker.py` |
 | bin2linyaps.fix | `skills/bin2linyaps.fix/` | `scripts/fix_package_id.sh`, `scripts/validate_package_id.sh` | — |
 
 **调用约定**：所有脚本调用均使用相對於 workspace 根目錄的路徑，**不要**使用 `cd` 切換工作目錄後再執行。
@@ -421,13 +421,43 @@ b. **创建任务列表**
 - **失败处理**: 如果验证失败，根据错误类型决定是否调用 `bin2linyaps.fix`
 
 #### Step 5: 兼容性测试
-调用 \`bin2linyaps.compat-testing\` skill：
-- 验证linglong.yaml格式
-- **验证 `package.id`、`package.name`、`package.description` 不为空且不包含未解析变量引用**（如 `${package_id}`、`${app_name}`、`${description}`）
-- 验证资源目录结构
-- 执行打包测试
-- 运行兼容性检测
-- **输出**: 测试报告
+调用 \`bin2linyaps.compat-testing\` skill 自动化执行：
+
+1. **构造子任务 JSON**（从 agent-config 和当前项目信息组装）：
+   ```json
+   {
+     "global": {
+       "projects_root": "<projects_root>",
+       "output_dir": "<output_dir>",
+       "build_tmp_dir": "<build_tmp_dir>",
+       "src_dir": "<src_dir>"
+     },
+     "tasks": [
+       {
+         "pkgName": "<package_id>",
+         "src_url": "<src_url>",
+         "arch": "<arch>",
+         "orig_version": "<version>"
+       }
+     ]
+   }
+   ```
+
+2. **前置检测**（可选）：
+   ```bash
+   bash skills/bin2linyaps.compat-testing/scripts/validate_projects.sh \
+     --task-file=<subtask.json> --output=reports/precheck.json
+   ```
+
+3. **执行全流程测试**：
+   ```bash
+   bash skills/bin2linyaps.compat-testing/scripts/run_tasks.sh <subtask.json>
+   ```
+
+4. **读取报告**：解析各任务的 `report.json`
+   - 全部 `passed` → 兼容性测试通过
+   - 存在 `failed` → 调用 `bin2linyaps.fix`
+   - **输出**: 测试报告（汇总 + 分步骤详情）
 
 #### Step 6: 问题修复（如需要）
 如果测试失败，调用 \`bin2linyaps.fix\` skill：
@@ -480,14 +510,14 @@ b. **创建任务列表**
 - **输出**: 验证报告（JSON格式）
 - **失败处理**: 如果验证失败，根据错误类型决定是否调用 `bin2linyaps.fix`
 
-##### Step 3: 兼容性测试
-调用 \`bin2linyaps.compat-testing\` skill：
-- 验证linglong.yaml格式
-- **验证 `package.id`、`package.name`、`package.description` 不为空且不包含未解析变量引用**（如 `${package_id}`、`${app_name}`、`${description}`）
-- 验证资源目录结构
-- 执行打包测试
-- 运行兼容性检测
-- **输出**: 测试报告
+##### Step 3: 兼容性测试 (tar 包)
+调用 \`bin2linyaps.compat-testing\` skill 自动化执行：
+
+1. **构造子任务 JSON**（从 agent-config 和当前项目信息组装）
+2. **前置检测**（可选）：`validate_projects.sh --task-file=<subtask.json>`
+3. **执行全流程测试**：`run_tasks.sh <subtask.json>`
+4. **读取报告**：全部 `passed` → 通过；存在 `failed` → 调用 `bin2linyaps.fix`
+- **输出**: 测试报告（汇总 + 分步骤详情）
 
 ##### Step 4: 问题修复（如需要）
 如果测试失败，调用 \`bin2linyaps.fix\` skill：
@@ -534,14 +564,14 @@ b. **创建任务列表**
 - **输出**: 验证报告（JSON格式）
 - **失败处理**: 如果验证失败，根据错误类型决定是否调用 `bin2linyaps.fix`
 
-##### Step 3: 兼容性测试
-调用 \`bin2linyaps.compat-testing\` skill：
-- 验证linglong.yaml格式
-- **验证 `package.id`、`package.name`、`package.description` 不为空且不包含未解析变量引用**（如 `${package_id}`、`${app_name}`、`${description}`）
-- 验证资源目录结构
-- 执行打包测试
-- 运行兼容性检测
-- **输出**: 测试报告
+##### Step 3: 兼容性测试 (AppImage 包)
+调用 \`bin2linyaps.compat-testing\` skill 自动化执行：
+
+1. **构造子任务 JSON**（从 agent-config 和当前项目信息组装）
+2. **前置检测**（可选）：`validate_projects.sh --task-file=<subtask.json>`
+3. **执行全流程测试**：`run_tasks.sh <subtask.json>`
+4. **读取报告**：全部 `passed` → 通过；存在 `failed` → 调用 `bin2linyaps.fix`
+- **输出**: 测试报告（汇总 + 分步骤详情）
 
 ##### Step 4: 问题修复（如需要）
 如果测试失败，调用 \`bin2linyaps.fix\` skill：
@@ -673,25 +703,54 @@ bash skills/bin2linyaps.validate-structure/scripts/validate_project_structure.sh
 bash skills/bin2linyaps.validate-structure/scripts/validate_project_structure.sh <project_dir> --fix
 ```
 
-### 调用common-data-verify
+### 执行兼容性全流程测试（推荐）
 ```bash
-python3 skills/bin2linyaps.compat-testing/scripts/common-data-verify.py <files_res_dir> --json --output report.json
+# Step 1: 构造子任务 JSON 并保存为 subtask.json
+# Step 2: 可选前置检测
+bash skills/bin2linyaps.compat-testing/scripts/validate_projects.sh \
+  --task-file=subtask.json --output=reports/precheck.json
+
+# Step 3: 执行 5 步测试管线
+bash skills/bin2linyaps.compat-testing/scripts/run_tasks.sh subtask.json
+
+# Step 4: 读取汇总报告
+cat output/reports/summary.json
 ```
 
-### 调用validate_linglong_yaml
+### 前置检测
 ```bash
-python3 skills/bin2linyaps.compat-testing/scripts/validate_linglong_yaml.py --input linglong.yaml --exec-name "app %U" --json
+# 检查项目目录完整性（pak_linyaps.sh、linglong.yaml、desktop 等）
+bash skills/bin2linyaps.compat-testing/scripts/validate_projects.sh \
+  --task-file=subtask.json --output=reports/precheck.json
+
+# 或直接指定包名
+bash skills/bin2linyaps.compat-testing/scripts/validate_projects.sh \
+  --pkg-name=com.example.app --projects-root=./projects
+```
+
+### 单步骤独立调用（调试用）
+```bash
+# validate_linglong_yaml — 检查 YAML 格式和必需字段
+python3 skills/bin2linyaps.compat-testing/scripts/validate_linglong_yaml.py \
+  --input <project>/linglong.yaml --exec-name "app %U" --json --output report.json
 ```
 > **注意**：此腳本會檢查 `package.id`、`package.name`、`package.description` 是否為空或包含未解析的 envsubst 變量引用（如 `${package_id}`）。若報告 `fail`，說明工程初始化時未正確填充這些欄位。
 
-### 调用compat_checker
-```python
+```bash
+# common-data-verify — 验证 desktop/icon 目录结构
+python3 skills/bin2linyaps.compat-testing/scripts/common-data-verify.py \
+  <files_res_dir> --json --output report.json
+
+# compat_checker — 运行时兼容性检测
+python3 -c "
 import sys
-sys.path.insert(0, "skills/bin2linyaps.compat-testing/scripts")
+sys.path.insert(0, 'skills/bin2linyaps.compat-testing/scripts')
 from demos.compat_checker import CompatChecker
-checker = CompatChecker(build_dir=Path("<build_dir>"), enable_compat_check=True)
+from pathlib import Path
+checker = CompatChecker(build_dir=Path('<build_dir>'), enable_compat_check=True)
 success, message = checker.check()
-```
+print(f'Status: {\"passed\" if success else \"failed\"}, Message: {message}')
+"
 
 ### 执行打包脚本（deb 版）
 ```bash
