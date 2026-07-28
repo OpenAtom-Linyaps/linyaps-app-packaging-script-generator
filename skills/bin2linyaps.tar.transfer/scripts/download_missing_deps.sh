@@ -34,13 +34,26 @@ for url in "${MISSING_DEPS_URLS[@]}"; do
     FAIL_COUNT=$((FAIL_COUNT + 1))
     continue
   fi
-  echo "解压: $deb_file -> $BINARY_DIR"
-  if ! dpkg -x "$deb_file" "$BINARY_DIR"; then
+  echo "解压: $deb_file"
+  EXTRACT_DIR=$(mktemp -d)
+  if ! dpkg -x "$deb_file" "$EXTRACT_DIR"; then
     echo "WARN: 解压失败: $deb_file" >&2
     FAIL_COUNT=$((FAIL_COUNT + 1))
     rm -f "$deb_file"
+    rm -rf "$EXTRACT_DIR"
     continue
   fi
+  if [ -d "$EXTRACT_DIR/usr" ]; then
+    for subdir in "$EXTRACT_DIR/usr/"*; do
+      [ -e "$subdir" ] || continue
+      if ! cp -rf "$subdir" "$BINARY_DIR/"; then
+        echo "WARN: 复制失败: $subdir -> $BINARY_DIR/" >&2
+        FAIL_COUNT=$((FAIL_COUNT + 1))
+        break
+      fi
+    done
+  fi
+  rm -rf "$EXTRACT_DIR"
   rm -f "$deb_file"
 done
 
