@@ -480,8 +480,8 @@ b. **创建任务列表**
 
 3. **效果**：
    - 更新 `templates/linglong.yaml` 的 `buildext.apt.depends`（保留 `${ll_version}` 等 envsubst 变量）
-   - 生成 `missing_deps_urls.conf`（URL 配置，可人工编辑）
-   - 生成 `download_missing_deps.sh`（下载解压脚本）
+- 生成 `missing_deps_urls.conf`（URL 配置，可人工编辑）
+    - 下载解压由静态脚本 `scripts/download_missing_deps.sh` 在 `pak_linyaps.sh` 构建时完成
    - **绝不修改** `build_tmp_dir` 中的任何文件
 
 4. **只执行一次**，不重复循环
