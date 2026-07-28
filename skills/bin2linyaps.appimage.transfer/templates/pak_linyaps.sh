@@ -13,7 +13,7 @@
 #=============================================================================
 
 srcType="appimage"
-templateVer="2026.6.9.1"
+templateVer="2026.7.28.1"
 
 set -x
 
@@ -32,7 +32,7 @@ runtime_version="${DEFAULT_RUNTIME_VERSION}"
 whitelist_file=""
 
 # Options
-auto_clean=""
+auto_clean="false"
 auto_push="${push}"
 repo_name="nightly"
 repo_url="https://repo-dev.cicd.getdeepin.org"
