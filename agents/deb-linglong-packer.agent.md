@@ -202,6 +202,7 @@ permission:
 | bin2linyaps.deb.collect-resources | `skills/bin2linyaps.deb.collect-resources/` | —（純 SKILL.md 指導型，無腳本） | — |
 | bin2linyaps.validate-structure | `skills/bin2linyaps.validate-structure/` | `scripts/validate_project_structure.sh` | — |
 | bin2linyaps.compat-testing | `skills/bin2linyaps.compat-testing/` | `scripts/run_tasks.sh`（编排入口）, `scripts/validate_projects.sh`（前置检测） | `scripts/validate_linglong_yaml.py`, `scripts/common-data-verify.py`, `scripts/demos/compat_checker.py` |
+| bin2linyaps.external-missing-deps-fetch | `skills/bin2linyaps.external-missing-deps-fetch/` | `scripts/fetch_missing_deps.sh` | — |
 | bin2linyaps.fix | `skills/bin2linyaps.fix/` | `scripts/fix_package_id.sh`, `scripts/validate_package_id.sh` | — |
 
 **调用约定**：所有脚本调用均使用相對於 workspace 根目錄的路徑，**不要**使用 `cd` 切換工作目錄後再執行。
@@ -459,12 +460,34 @@ b. **创建任务列表**
    - 存在 `failed` → 调用 `bin2linyaps.fix`
    - **输出**: 测试报告（汇总 + 分步骤详情）
 
+#### Step 5.5: 缺失依赖修复（条件执行）
+如果前一阶段的兼容性测试生成了 `missing_deps.json` 或 `missing_deps.csv`，调用 \`bin2linyaps.external-missing-deps-fetch\` skill 自动修复模板依赖：
+
+1. **检查构建元数据**：读取 `reports/<pkg>/build_meta.json`，检查 `missing_deps_json` 或 `missing_deps_csv` 是否为非 null
+   - 非 null → 存在缺失依赖，继续执行
+   - null → 跳过，无缺失依赖
+
+2. **执行缺失依赖获取**：
+   ```bash
+   # 从 build_meta.json 读取 build_tmp_dir
+   BUILD_TMP_DIR=$(python3 -c "import json; print(json.load(open('reports/<pkg>/build_meta.json'))['build_tmp_dir'])")
+   
+   # 调用 fetch_missing_deps.sh
+   bash skills/bin2linyaps.external-missing-deps-fetch/scripts/fetch_missing_deps.sh \
+     --project-dir=<project_dir> \
+     --build-tmp-dir=${BUILD_TMP_DIR}
+   ```
+
+3. **效果**：
+   - 更新 `templates/linglong.yaml` 的 `buildext.apt.depends`（保留 `${ll_version}` 等 envsubst 变量）
+   - 生成 `missing_deps_urls.conf`（URL 配置，可人工编辑）
+   - 生成 `download_missing_deps.sh`（下载解压脚本）
+   - **绝不修改** `build_tmp_dir` 中的任何文件
+
+4. **只执行一次**，不重复循环
+- **输出**: 更新后的 `templates/linglong.yaml` + 下载脚本
+
 #### Step 6: 问题修复（如需要）
-如果测试失败，调用 \`bin2linyaps.fix\` skill：
-- 根据验证报告修复问题
-- 重新运行测试
-- **暂停**: 无法自动修复时询问用户
-- **输出**: 修复报告
 
 #### Step 7: 完成
 - 保存工程到最终位置
@@ -519,12 +542,24 @@ b. **创建任务列表**
 4. **读取报告**：全部 `passed` → 通过；存在 `failed` → 调用 `bin2linyaps.fix`
 - **输出**: 测试报告（汇总 + 分步骤详情）
 
+##### Step 3.5: 缺失依赖修复（条件执行）
+如果前一阶段的兼容性测试生成了 `missing_deps.json` 或 `missing_deps.csv`，调用 \`bin2linyaps.external-missing-deps-fetch\` skill 自动修复模板依赖：
+
+1. **检查构建元数据**：读取 `reports/<pkg>/build_meta.json`，检查 `missing_deps_json` 或 `missing_deps_csv` 是否为非 null
+   - 非 null → 存在缺失依赖，继续执行
+   - null → 跳过，无缺失依赖
+
+2. **执行缺失依赖获取**：
+   ```bash
+   bash skills/bin2linyaps.external-missing-deps-fetch/scripts/fetch_missing_deps.sh \
+     --project-dir=<project_dir> \
+     --build-tmp-dir=$(python3 -c "import json;print(json.load(open('reports/<pkg>/build_meta.json'))['build_tmp_dir'])")
+   ```
+
+3. **只执行一次**，不重复循环
+- **输出**: 更新后的 `templates/linglong.yaml` + 下载脚本
+
 ##### Step 4: 问题修复（如需要）
-如果测试失败，调用 \`bin2linyaps.fix\` skill：
-- 根据验证报告修复问题
-- 重新运行测试
-- **暂停**: 无法自动修复时询问用户
-- **输出**: 修复报告
 
 ##### Step 5: 完成
 - 保存工程到最终位置
@@ -573,12 +608,24 @@ b. **创建任务列表**
 4. **读取报告**：全部 `passed` → 通过；存在 `failed` → 调用 `bin2linyaps.fix`
 - **输出**: 测试报告（汇总 + 分步骤详情）
 
+##### Step 3.5: 缺失依赖修复（条件执行）
+如果前一阶段的兼容性测试生成了 `missing_deps.json` 或 `missing_deps.csv`，调用 \`bin2linyaps.external-missing-deps-fetch\` skill 自动修复模板依赖：
+
+1. **检查构建元数据**：读取 `reports/<pkg>/build_meta.json`，检查 `missing_deps_json` 或 `missing_deps_csv` 是否为非 null
+   - 非 null → 存在缺失依赖，继续执行
+   - null → 跳过，无缺失依赖
+
+2. **执行缺失依赖获取**：
+   ```bash
+   bash skills/bin2linyaps.external-missing-deps-fetch/scripts/fetch_missing_deps.sh \
+     --project-dir=<project_dir> \
+     --build-tmp-dir=$(python3 -c "import json;print(json.load(open('reports/<pkg>/build_meta.json'))['build_tmp_dir'])")
+   ```
+
+3. **只执行一次**，不重复循环
+- **输出**: 更新后的 `templates/linglong.yaml` + 下载脚本
+
 ##### Step 4: 问题修复（如需要）
-如果测试失败，调用 \`bin2linyaps.fix\` skill：
-- 根据验证报告修复问题
-- 重新运行测试
-- **暂停**: 无法自动修复时询问用户
-- **输出**: 修复报告
 
 ##### Step 5: 完成
 - 保存工程到最终位置
