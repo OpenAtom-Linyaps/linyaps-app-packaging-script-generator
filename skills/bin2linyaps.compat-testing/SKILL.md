@@ -1,155 +1,156 @@
 ---
 name: bin2linyaps.compat-testing
 description: >
-  执行玲珑打包构建测试，验证生成的工程是否可以正常构建，
-  并运行兼容性检测确保应用能在玲珑环境中正常运行。
+  自动执行玲珑打包全流程测试：YAML 校验 → 目录结构校验 → pak_linyaps.sh 构建 →
+  运行时兼容性检测 → 生成 JSON 报告。接收任务 JSON，对每个 project 执行 5 步测试管线。
 user-invocable: false
 ---
 
-# 兼容性测试
+# bin2linyaps.compat-testing
 
 ## 功能说明
 
-执行玲珑打包构建测试，验证生成的工程是否可以正常构建，并运行兼容性检测确保应用能在玲珑环境中正常运行。
+对已生成的玲珑打包工程执行 5 步自动化测试管线：
 
-## 触发场景
+1. **YAML 校验** — `validate_linglong_yaml.py` 验证 `linglong.yaml` 语法、必需字段、version 格式
+2. **结构校验** — `common-data-verify.py` 验证 desktop/icon 目录结构合规性
+3. **构建测试** — 通过 `pak_linyaps.sh` 执行构建，验证输出 `.layer` 文件
+4. **兼容性检测** — 优先 CompatChecker Python API，备用 `ll-builder run`
+5. **报告合并** — 汇总前 4 步结果，生成每任务 JSON 报告 + 全局统计
 
-- 需要测试打包脚本是否正常工作
-- 需要验证linglong.yaml格式正确性
-- 需要检测应用运行时兼容性
-- 需要在推送前验证构建结果
+## 目录约定
 
-## 工作流程
+- 编排入口：`skills/bin2linyaps.compat-testing/scripts/run_tasks.sh`
+- 前置检测：`skills/bin2linyaps.compat-testing/scripts/validate_projects.sh`
+- YAML 校验：`skills/bin2linyaps.compat-testing/scripts/validate_linglong_yaml.py`
+- 结构校验：`skills/bin2linyaps.compat-testing/scripts/common-data-verify.py`
+- 兼容检测：`skills/bin2linyaps.compat-testing/scripts/demos/compat_checker.py`
 
-### 1. 验证 linglong.yaml 格式
+## 输入
 
-调用 `scripts/validate_linglong_yaml.py`：
+标准任务 JSON，`tasks[].type` 为 `binary` 或未指定：
 
-```bash
-cd scripts
-python3 validate_linglong_yaml.py \
-  --input templates/linglong.yaml \
-  --exec-name "$(get_exec_from_desktop)" \
-  --json \
-  --output reports/yaml_validation.json
+```json
+{
+  "global": {
+    "projects_root": "/path/to/projects",
+    "output_dir": "./output/${tag}",
+    "build_tmp_dir": "./build_cache",
+    "src_dir": "./src"
+  },
+  "tasks": [
+    {
+      "pkgName": "com.example.app",
+      "type": "binary",
+      "src_url": "https://example.com/app_1.0_amd64.deb",
+      "arch": "x86_64",
+      "orig_version": "1.0.0"
+    }
+  ]
+}
 ```
 
-验证项：
-- YAML语法正确
-- 必需字段存在（version, package.*, base, command, build）
-- command与desktop Exec一致
-- 版本格式正确（x.x.x.x）
-- 缩进格式正确
+## 执行流程
 
-### 2. 验证资源目录结构
-
-调用 `scripts/common-data-verify.py`：
+### 前置检测（可选）
 
 ```bash
-cd scripts
-python3 common-data-verify.py \
-  templates/files_res \
-  --json \
-  --output reports/structure_validation.json
+bash skills/bin2linyaps.compat-testing/scripts/validate_projects.sh \
+  --task-file=<task.json> \
+  --output=<output.json>
 ```
 
-验证项：
-- desktop文件格式正确
-- 图标目录结构规范
-- 二进制文件可执行
+检查项：项目目录存在 → `pak_linyaps.sh` 可执行 → `linglong.yaml` 存在 → desktop ≥ 1 → 图标目录合规
 
-### 3. 执行打包测试
-
-运行 `pak_linyaps.sh`：
+### 全流程测试（5 步管线）
 
 ```bash
-cd CI_ll_<package_id>
-
-# 准备测试环境
-mkdir -p src bins
-cp <deb_file> src/
-
-# 执行打包
-./pak_linyaps.sh \
-  --linyaps_arch=x86_64 \
-  --origin_version=<version> \
-  --src_path=src/<deb_name> \
-  --output_dir=bins
-
-# 检查构建结果
-if [ -f bins/*binary.layer ]; then
-  echo "Build success"
-else
-  echo "Build failed"
-fi
+bash skills/bin2linyaps.compat-testing/scripts/run_tasks.sh <task.json>
 ```
 
-### 4. 运行兼容性检测
+对每个 task 依次执行：
 
-调用 `scripts/demos/compat_checker.py`：
+| 步骤 | 操作 | 脚本/工具 | 产出 |
+|------|------|-----------|------|
+| 1 | YAML 校验 | `validate_linglong_yaml.py --input linglong.yaml --exec-name ... --json` | `reports/<pkg>/yaml_validation.json` |
+| 2 | 结构校验 | `common-data-verify.py templates/files_res --json` | `reports/<pkg>/structure_validation.json` |
+| 3 | 构建测试 | `pak_linyaps.sh --linyaps_arch=... --origin_version=... --src_path=...` | `reports/<pkg>/build.log` + `.layer` |
+| 4 | 兼容检测 | CompatChecker API / `ll-builder run` | `reports/<pkg>/compat_result.json` |
+| 5 | 报告合并 | 汇总前 4 步 JSON | `reports/<pkg>/report.json` + `reports/summary.json` |
 
-```python
+### 单步骤独立调用（调试用）
+
+```bash
+# YAML 校验
+python3 skills/bin2linyaps.compat-testing/scripts/validate_linglong_yaml.py \
+  --input <project>/linglong.yaml \
+  --exec-name "app %U" \
+  --json --output report.json
+
+# 结构校验
+python3 skills/bin2linyaps.compat-testing/scripts/common-data-verify.py \
+  <project>/templates/files_res \
+  --json --output report.json
+
+# 兼容检测
+python3 -c "
 import sys
-sys.path.insert(0, "scripts")
+sys.path.insert(0, 'skills/bin2linyaps.compat-testing/scripts')
 from demos.compat_checker import CompatChecker
 from pathlib import Path
-
-checker = CompatChecker(
-    build_dir=Path("/path/to/build/tmp"),
-    enable_compat_check=True,
-    timeout=30,
-    verbose=True
-)
-
+checker = CompatChecker(build_dir=Path('<build_dir>'), enable_compat_check=True)
 success, message = checker.check()
-status = checker.get_status()  # "passed", "failed", "N/A"
-
-if not success:
-    error_log = checker.get_error_log_content()
-    print(f"Compat check failed: {message}")
-    print(f"Error log:\n{error_log}")
+print(f'Status: {\"passed\" if success else \"failed\"}, Message: {message}')
+"
 ```
 
-或使用 `ll-builder run`：
+## 约束
 
-```bash
-cd <build_tmp_dir>
-timeout 30 ll-builder run || exit_code=$?
+- 构建入口唯一性：所有构建操作必须通过 `pak_linyaps.sh` 执行，严禁自行调用 `ll-builder` 或修改 `linglong.yaml`
+- 只读测试：不修改项目目录中的任何文件
+- 版本字段保护：`validate_linglong_yaml.py` 会检查 `package.id`、`package.name`、`package.description` 是否含未解析变量（如 `${package_id}`），若报错说明工程初始化未正确填充
+- 架构依赖：task JSON 中的 `arch` 须与 `skills/config/arch_mapping.json` 匹配
 
-# exit_code 0: 正常退出
-# exit_code 124: 超时（应用持续运行，视为成功）
-# 其他: 运行失败
-```
+## 依赖
 
-### 5. 生成测试报告
+- `python3` — 校验脚本运行环境
+- `curl` — 源文件下载
+- `timeout` — 兼容性检测超时控制
+- `ll-builder` — 玲珑构建工具（CompatChecker 备用）
+- `dpkg` — Debian 包处理（`pak_linyaps.sh` 内部依赖）
+
+## 输出格式
+
+### 单任务报告 (`reports/<pkg>/report.json`)
 
 ```json
 {
   "package_id": "com.example.app",
-  "test_time": "2024-01-15T10:30:00Z",
+  "test_time": "2026-07-28T10:30:00Z",
   "overall_status": "passed",
   "tests": {
-    "yaml_validation": {
-      "status": "passed",
-      "details": []
-    },
-    "structure_validation": {
-      "status": "passed",
-      "details": []
-    },
-    "build_test": {
-      "status": "passed",
-      "output_layer": "bins/com.example.app-binary.layer",
-      "build_time": "45.2s"
-    },
-    "compat_check": {
-      "status": "passed",
-      "timeout": 30,
-      "exit_code": 124
-    }
+    "yaml_validation": { "step": "yaml_validation", "status": "passed" },
+    "structure_validation": { "step": "structure_validation", "status": "passed" },
+    "build_test": { "step": "build_test", "status": "passed", "duration_seconds": 45, "output_layer": "output/com.example.app-binary.layer" },
+    "compat_check": { "step": "compat_check", "status": "passed", "exit_code": 124 }
   },
   "errors": [],
   "warnings": []
+}
+```
+
+### 汇总报告 (`reports/summary.json`)
+
+```json
+{
+  "test_time": "2026-07-28T10:30:00Z",
+  "total": 5,
+  "passed": 4,
+  "failed": 1,
+  "results": [
+    { "pkgName": "com.example.app", "status": "passed" },
+    { "pkgName": "com.failed.app", "status": "failed" }
+  ]
 }
 ```
 
@@ -157,34 +158,12 @@ timeout 30 ll-builder run || exit_code=$?
 
 | 失败类型 | 处理方式 |
 |---------|---------|
-| YAML格式错误 | 调用 bin2linyaps.fix skill 修复 |
-| 资源结构问题 | 调用 bin2linyaps.fix skill 修复 |
-| 构建失败 | 分析错误日志，提示用户检查 |
-| 兼容性失败 | 保存错误日志，调用 bin2linyaps.fix skill |
+| YAML 格式错误 | 调用 `bin2linyaps.fix` skill 修复 |
+| 资源结构问题 | 调用 `bin2linyaps.fix` skill 修复 |
+| 构建失败 | 分析 `build.log`，提示用户检查 |
+| 兼容性失败 | 保存错误日志，调用 `bin2linyaps.fix` skill |
 
-## 错误日志位置
+## 返回码
 
-```
-CI_ll_<package_id>/
-└── reports/
-    ├── yaml_validation.json
-    ├── structure_validation.json
-    ├── build.log
-    └── compat-check-errors/
-        └── run-error.log
-```
-
-## 依赖工具
-
-- `ll-builder` - 玲珑构建工具
-- `dpkg` - deb包处理
-- `timeout` - 超时控制
-- Python库: `yaml`, `pathlib`
-
-## 注意事项
-
-1. 构建测试需要足够的磁盘空间
-2. 兼容性检测超时视为成功（应用正常启动并持续运行）
-3. 测试失败时保存完整日志便于分析
-4. 多架构需要分别测试
-5. 测试完成后可清理临时构建目录
+- `0` — 全部任务通过
+- `1` — 存在失败任务
