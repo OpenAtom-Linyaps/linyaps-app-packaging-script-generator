@@ -22,15 +22,6 @@ EOF
 
 file=$(basename "$1")
 
-# 检查 apt-file 缓存是否可用，不可用时更新
-if ! apt-file list 2>/dev/null | head -1 >/dev/null 2>&1; then
-    echo "[INFO] 正在更新 apt-file 缓存（首次运行需要下载索引）..." >&2
-    apt-file update >/dev/null 2>&1 || {
-        echo "[ERROR] apt-file update 失败，请检查网络或 apt 源" >&2
-        exit 1
-    }
-fi
-
 # apt-file 反向查找（不依赖本地安装，查询远程仓库索引）
 pkg=$(apt-file search -x "/${file}$" 2>/dev/null | cut -d: -f1 | sort -u)
 
