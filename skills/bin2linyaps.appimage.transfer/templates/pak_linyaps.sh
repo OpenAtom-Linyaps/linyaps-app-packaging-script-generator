@@ -637,6 +637,20 @@ WRAPPER_EOF
 	# 在 binary/lib/ 下為所有非標準目錄的 ELF 共享庫創建相對路徑軟鏈接
 	"${project_root}/scripts/fix_nonstd_lib_symlinks.sh" "${binary_dir}"
 
+	# 外部缺失依賴下載與解壓（由 bin2linyaps.external-missing-deps-fetch skill 生成）
+	# 檢測到 missing_deps_urls.conf 時，自動調用 download_missing_deps.sh 將缺失 deb 下載并解壓到 binary_dir
+	# 即使下載或解壓失敗也不阻塞後續構建流程（非阻塞設計）
+	if [ -f "${project_root}/missing_deps_urls.conf" ]; then
+		echo "檢測到缺失依賴配置 (missing_deps_urls.conf)，執行下載解壓..."
+		if "${project_root}/download_missing_deps.sh" "${binary_dir}"; then
+			echo "外部缺失依賴下載解壓完成"
+		else
+			echo "警告: 外部缺失依賴下載解壓失敗，繼續構建流程" >&2
+		fi
+	else
+		echo "未檢測到缺失依賴配置 (missing_deps_urls.conf)，跳過"
+	fi
+
 	# 創建玲瓏構建標識文件
 	# binary/ 目錄對應 linglong.yaml 中的 ${prefix}
 	# 此文件用於標識由 linyaps 系統生成的構建產物
