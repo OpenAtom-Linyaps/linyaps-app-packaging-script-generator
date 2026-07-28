@@ -6,7 +6,8 @@
 skills/bin2linyaps.external-missing-deps-fetch/
   SKILL.md          # Skill 定义与编排文档
   scripts/
-    fetch_missing_deps.sh   # 主脚本: 解析→搜索→更新yaml→生成conf+下载脚本
+    fetch_missing_deps.sh   # 主脚本: 解析→搜索→更新yaml→生成conf
+    download_missing_deps.sh # 静态下载脚本: 解析conf→下载→解压
 ```
 
 ## 产物清单
@@ -16,7 +17,8 @@ skills/bin2linyaps.external-missing-deps-fetch/
 | 文件 | 说明 |
 |------|------|
 | `missing_deps_urls.conf` | 外置URL配置文件，可人工编辑 |
-| `download_missing_deps.sh` | 通用下载解压脚本，读取conf执行 |
+
+下载解压由静态脚本 `scripts/download_missing_deps.sh` 完成（项目初始化时复制到项目 `scripts/` 目录）。
 
 ## SKILL.md 结构
 
@@ -62,7 +64,7 @@ user-invocable: false
 | **4. apt-file 搜索包名** | 对每个 so 模糊匹配所属包 | `apt-file search -x "/${so}$" \| cut -d: -f1 \| sort -u`，`xargs -P $(nproc)` 并行 |
 | **5. 更新 linglong.yaml** | 追加 `buildext.apt.depends` | `yq eval` 读已有列表 → 合并去重 → 写回 |
 | **6. 获取下载 URL** | dry-run 获取完整 deb URL | `apt-get download --print-uris <pkg> \| awk -F"'" '{print $2}'` |
-| **7. 生成 conf + 下载脚本** | 写入 `missing_deps_urls.conf` + `download_missing_deps.sh` | shell 模板，URL 列表写入 conf，下载脚本引用 conf |
+| **7. 生成 conf** | 写入 `missing_deps_urls.conf` | shell 模板，URL 列表写入 conf |
 | **8. 输出摘要** | 打印结果 | 包数、so数、生成文件路径 |
 
 ---
@@ -80,24 +82,27 @@ MISSING_DEPS_URLS=(
 )
 ```
 
-### `download_missing_deps.sh`（自动生成）
+### `download_missing_deps.sh`（静态脚本）
+
+由项目初始化时复制到项目 `scripts/` 目录，不依赖 `fetch_missing_deps.sh` 是否执行过：
 
 ```bash
 #!/bin/bash
-# 由 bin2linyaps.external-missing-deps-fetch 自动生成
-# 通用下载解压脚本，从同目录的 missing_deps_urls.conf 读取 URL
+# 通用下载解压脚本，解析项目根目录的 missing_deps_urls.conf
 # 用法: ./download_missing_deps.sh [binary_dir 路径]
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-BINARY_DIR="${1:-${SCRIPT_DIR}/binary_dir}"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+CONF_FILE="${PROJECT_ROOT}/missing_deps_urls.conf"
+BINARY_DIR="${1:-${PROJECT_ROOT}/binary_dir}"
 
-if [ ! -f "${SCRIPT_DIR}/missing_deps_urls.conf" ]; then
-  echo "ERROR: missing_deps_urls.conf not found in ${SCRIPT_DIR}"
-  exit 1
+if [ ! -f "$CONF_FILE" ]; then
+  echo "INFO: 未找到 missing_deps_urls.conf，无需下载"
+  exit 0
 fi
 
-source "${SCRIPT_DIR}/missing_deps_urls.conf"
+source "$CONF_FILE"
 
 if [ ${#MISSING_DEPS_URLS[@]} -eq 0 ]; then
   echo "INFO: 没有需要下载的依赖包"
@@ -110,9 +115,9 @@ mkdir -p "$BINARY_DIR" "$DEB_CACHE"
 for url in "${MISSING_DEPS_URLS[@]}"; do
   deb_file="$DEB_CACHE/$(basename "$url")"
   echo "下载: $url"
-  wget -q "$url" -O "$deb_file"
+  wget -q "$url" -O "$deb_file" || { echo "WARN: 下载失败: $url"; continue; }
   echo "解压: $deb_file → $BINARY_DIR"
-  dpkg -x "$deb_file" "$BINARY_DIR"
+  dpkg -x "$deb_file" "$BINARY_DIR" || { echo "WARN: 解压失败: $deb_file"; continue; }
   rm -f "$deb_file"
 done
 
@@ -143,7 +148,7 @@ buildext:
 | `apt-file` | so → pkg 反向查找 | 需提前 `apt-file update` |
 | `yq` | 修改 linglong.yaml | |
 | `apt-get` | 获取 deb 下载 URL | `download --print-uris` dry-run |
-| `wget` | 下载 deb | 在生成的脚本中使用 |
+| `wget` | 下载 deb | 在静态下载脚本中使用 |
 | `dpkg` | 解压 deb | `dpkg -x` |
 
 ---
@@ -170,5 +175,4 @@ buildext:
 4. 检查:
    - `linglong.yaml` 是否追加了 `buildext.apt.depends`
    - `missing_deps_urls.conf` 是否包含有效 URL
-   - `download_missing_deps.sh` 是否可执行
    - URL 去重是否正确

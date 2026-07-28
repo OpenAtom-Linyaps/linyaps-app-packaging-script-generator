@@ -315,6 +315,10 @@ create_project_structure() {
         cp "${WORKSPACE_ROOT}/skills/bin2linyaps.deb.project-gen/scripts/handle_special_paths.sh" "${project_dir}/scripts/"
         chmod +x "${project_dir}/scripts/handle_special_paths.sh"
     fi
+    if [[ -f "${WORKSPACE_ROOT}/skills/bin2linyaps.deb.project-gen/scripts/download_missing_deps.sh" ]]; then
+        cp "${WORKSPACE_ROOT}/skills/bin2linyaps.deb.project-gen/scripts/download_missing_deps.sh" "${project_dir}/scripts/"
+        chmod +x "${project_dir}/scripts/download_missing_deps.sh"
+    fi
 
     # 拷贝白名单配置文件
     if [[ -f "${WORKSPACE_ROOT}/skills/config/base_runtime_whitelist.conf" ]]; then
