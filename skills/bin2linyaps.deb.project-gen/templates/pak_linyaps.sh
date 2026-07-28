@@ -3,7 +3,7 @@
 set -x
 
 srcType="deb"
-templateVer="2026.06.02"
+templateVer="2026.7.28.1"
 
 # 默認 base/runtime 配置（可通過命令行參數覆蓋）
 DEFAULT_BASE_ID="org.deepin.base"
@@ -21,7 +21,7 @@ whitelist_file=""
 
 # Options
 ## Auto cleaning, default blank value means "true/TRUE"
-auto_clean=""
+auto_clean="false"
 ## Auto push to specified repo, if success. Default blank value means "false/FALSE"
 auto_push="${push}"
 
