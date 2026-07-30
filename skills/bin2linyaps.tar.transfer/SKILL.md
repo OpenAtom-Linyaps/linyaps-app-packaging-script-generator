@@ -232,7 +232,7 @@ desktop_files=$(find "${extract_dir}" -name "*.desktop" -type f 2>/dev/null)
 **優先級**：
 
 1. **從 desktop `Icon=` 欄位提取**：解析 Icon 值，在 tar 解壓目錄中查找對應文件
-2. **在 tar 包整個解壓目錄中查找**：`find "${extract_dir}" -type f \( -name "*.png" -o -name "*.svg" -o -name "*.xpm" \)`
+2. **在 tar 包整個解壓目錄中查找**：`find "${extract_dir}" -type f \( -name "*.png" -o -name "*.svg" -o -name "*.svgz" -o -name "*.xpm" -o -name "*.jpg" -o -name "*.jpeg" -o -name "*.tiff" -o -name "*.tif" -o -name "*.gif" -o -name "*.bmp" -o -name "*.ico" -o -name "*.xbm" \)`
 3. **用戶提供 `--icon-url`**：下載圖標文件
 
 **失敗處理**：以上均未找到有效 icon → **任務終止並報錯**
