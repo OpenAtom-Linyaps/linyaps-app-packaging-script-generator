@@ -3,7 +3,7 @@
 set -x
 
 srcType="deb"
-templateVer="2026.7.30.2"
+templateVer="2026.7.30.3"
 
 # 默認 base/runtime 配置（可通過命令行參數覆蓋）
 DEFAULT_BASE_ID="org.deepin.base"
@@ -697,10 +697,9 @@ build_pak() {
 			# Fallback: 仅按名称查找（检测文件存在但无执行权限）
 			candidates=$(find "${binary_dir}" -type f -name "${binary_name}" 2>/dev/null | sort)
 			if [ -n "${candidates}" ]; then
-				echo "[ERROR] Binary '${binary_name}' found but is not executable:" >&2
-				echo "[ERROR]   $(echo "${candidates}" | tr '\n' ' ')" >&2
-				echo "[ERROR] Desktop Exec entry points to a non-executable file. Please add execute permission or verify the path." >&2
-				exit 1
+				echo "[Warning] Binary '${binary_name}' found but is not executable:" >&2
+				echo "[Warning]   $(echo "${candidates}" | tr '\n' ' ')" >&2
+				echo "[Warning] Desktop Exec entry points to a non-executable file. Please add execute permission or verify the path." >&2
 			fi
 		fi
 
