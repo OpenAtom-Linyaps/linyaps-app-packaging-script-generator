@@ -3,7 +3,7 @@
 set -x
 
 srcType="deb"
-templateVer="2026.7.28.2"
+templateVer="2026.7.30.1"
 
 # 默認 base/runtime 配置（可通過命令行參數覆蓋）
 DEFAULT_BASE_ID="org.deepin.base"
