@@ -88,7 +88,6 @@ done < <(find "${extract_dir}" -maxdepth 1 -type f \
     ! -name "*.a" \
     ! -name "*.la" \
     ! -name "*.o" \
-    ! -name ".*" \
     -executable 2>/dev/null)
 
 # 如果找到任何候選，返回成功

@@ -18,7 +18,9 @@ build: |
   ## Extract AppImage res
   # binary/ 的内容直接对应 $prefix/ (files/)
   # AppImage 的 squashfs-root 保持原始結構，安裝到 lib/${APP_PREFIX}/
+  shopt -s dotglob
   cp -rf /project/binary/* ${prefix}/
+  shopt -u dotglob
 
   # 複製桌面文件、圖標等資源
   cp -rf /project/files_res/* ${prefix}/
