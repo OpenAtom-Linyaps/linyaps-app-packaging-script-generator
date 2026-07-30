@@ -3,7 +3,7 @@
 set -x
 
 srcType="deb"
-templateVer="2026.7.30.1"
+templateVer="2026.7.30.2"
 
 # 默認 base/runtime 配置（可通過命令行參數覆蓋）
 DEFAULT_BASE_ID="org.deepin.base"
@@ -689,6 +689,21 @@ build_pak() {
 		actual_binary=""
 		real_binary=""
 		rel_binary=""
+
+		# 先按可执行权限查找
+		local candidates
+		candidates=$(find "${binary_dir}" -type f -name "${binary_name}" -executable 2>/dev/null | sort)
+		if [ -z "${candidates}" ]; then
+			# Fallback: 仅按名称查找（检测文件存在但无执行权限）
+			candidates=$(find "${binary_dir}" -type f -name "${binary_name}" 2>/dev/null | sort)
+			if [ -n "${candidates}" ]; then
+				echo "[ERROR] Binary '${binary_name}' found but is not executable:" >&2
+				echo "[ERROR]   $(echo "${candidates}" | tr '\n' ' ')" >&2
+				echo "[ERROR] Desktop Exec entry points to a non-executable file. Please add execute permission or verify the path." >&2
+				exit 1
+			fi
+		fi
+
 		while IFS= read -r candidate; do
 			# 解析真實路徑，跳過損壞的符號連結
 			local resolved
@@ -703,7 +718,7 @@ build_pak() {
 				echo "  選中有效的 binary: ${candidate} -> ${resolved}" >&2
 				break
 			fi
-		done < <(find "${binary_dir}" -type f -name "${binary_name}" -executable 2>/dev/null | sort)
+		done < <(echo "${candidates}")
 
 		if [ -n "${actual_binary}" ] && [ -n "${real_binary}" ]; then
 			# 計算相對於 binary/ 的路徑
