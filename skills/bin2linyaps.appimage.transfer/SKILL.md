@@ -192,7 +192,7 @@ binary_name=$("${skill_root}/scripts/resolve_exec_command.sh" "${extract_dir}/sq
 **優先級**：
 
 1. **從 desktop `Icon=` 欄位提取**：解析 Icon 值，在 squashfs-root 中查找對應文件
-2. **在 squashfs-root 整個目錄中查找**：`find "${extract_dir}/squashfs-root" -type f \( -name "*.png" -o -name "*.svg" -o -name "*.xpm" \)`
+2. **在 squashfs-root 整個目錄中查找**：`find "${extract_dir}/squashfs-root" -type f \( -name "*.png" -o -name "*.svg" -o -name "*.svgz" -o -name "*.xpm" -o -name "*.jpg" -o -name "*.jpeg" -o -name "*.tiff" -o -name "*.tif" -o -name "*.gif" -o -name "*.bmp" -o -name "*.ico" -o -name "*.xbm" \)`
 3. **用戶提供 `--icon-url`**：下載圖標文件
 
 **失敗處理**：以上均未找到有效 icon → **任務終止並報錯**

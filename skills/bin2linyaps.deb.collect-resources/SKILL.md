@@ -50,7 +50,7 @@ def scan_resources(data_path: str) -> dict:
             resources['desktop_files'].append(str(f))
     
     # 扫描图标（分开收集 icons 和 pixmaps，便于后续处理）
-    for ext in ['*.png', '*.svg', '*.svgz', '*.jpg', '*.xpm']:
+    for ext in ['*.png', '*.svg', '*.svgz', '*.xpm', '*.jpg', '*.jpeg', '*.tiff', '*.tif', '*.gif', '*.bmp', '*.ico', '*.xbm']:
         for f in data_dir.rglob(ext):
             if 'icons' in str(f):
                 resources['icons'].append(str(f))
@@ -213,9 +213,8 @@ def fix_desktop_file(desktop_path: str, package_id: str):
     with open(desktop_path, 'r') as f:
         content = f.read()
     
-    # 修复Icon路径为相对路径
-    # Icon=/usr/share/icons/xxx -> Icon=xxx
-    content = re.sub(r'Icon=/.*?/([^/]+)\.(png|svg)', r'Icon=\1', content)
+    # 修复Icon路径为相对路径，去除扩展名（符合XDG规范）
+    content = re.sub(r'Icon=[^=]*?([^/\\]+?)\.(png|jpg|jpeg|svg|svgz|xpm|tiff|tif|gif|bmp|ico|xbm)\b', r'Icon=\1', content)
     
     # ⚠️ 不修改 Exec 路径！
     # Exec 路径由 pak_linyaps.sh 在构建时通过 wrapper 机制自动处理
