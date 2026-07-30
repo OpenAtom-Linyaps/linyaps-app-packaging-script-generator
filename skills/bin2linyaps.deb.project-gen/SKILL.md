@@ -399,9 +399,8 @@ build_pak() {
       # Fallback: 仅按名称查找（检测文件存在但无执行权限）
       actual_binary=$(find "${binary_dir}" -type f -name "${binary_name}" 2>/dev/null | head -n 1)
       if [ -n "${actual_binary}" ]; then
-        echo "[ERROR] Binary '${binary_name}' found but is not executable: ${actual_binary}" >&2
-        echo "[ERROR] Desktop Exec entry points to a non-executable file." >&2
-        exit 1
+        echo "[Warning] Binary '${binary_name}' found but is not executable: ${actual_binary}" >&2
+        echo "[Warning] Desktop Exec entry points to a non-executable file." >&2
       fi
     fi
     
@@ -654,9 +653,8 @@ build_pak() {
       # Fallback: 仅按名称查找（检测文件存在但无执行权限）
       actual_binary=$(find "${binary_dir}" -type f -name "${binary_name}" 2>/dev/null | head -n 1)
       if [ -n "${actual_binary}" ]; then
-        echo "[ERROR] Binary '${binary_name}' found but is not executable: ${actual_binary}" >&2
-        echo "[ERROR] Desktop Exec entry points to a non-executable file." >&2
-        exit 1
+        echo "[Warning] Binary '${binary_name}' found but is not executable: ${actual_binary}" >&2
+        echo "[Warning] Desktop Exec entry points to a non-executable file." >&2
       fi
     fi
     
