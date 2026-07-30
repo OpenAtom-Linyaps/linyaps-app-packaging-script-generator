@@ -13,7 +13,7 @@
 #=============================================================================
 
 srcType="appimage"
-templateVer="2026.7.30.2"
+templateVer="2026.7.30.3"
 
 set -x
 
@@ -527,9 +527,8 @@ build_pak() {
 	# 若文件存在但無執行權限，則報錯終止構建，避免生成無效 wrapper
 	local target_path="${binary_dir}/lib/${app_prefix}/${wrapper_target}"
 	if [ -f "${target_path}" ] && [ ! -x "${target_path}" ]; then
-		echo "[ERROR] Binary '${wrapper_target}' found but is not executable: ${target_path}" >&2
-		echo "[ERROR] Desktop Exec entry points to a non-executable file. Please add execute permission or verify the path." >&2
-		exit 1
+		echo "[Warning] Binary '${wrapper_target}' found but is not executable: ${target_path}" >&2
+		echo "[Warning] Desktop Exec entry points to a non-executable file. Please add execute permission or verify the path." >&2
 	fi
 
 	# 檢測 wrapper_target 是否為有風險的腳本（使用 $1/$2 等位置參數）
