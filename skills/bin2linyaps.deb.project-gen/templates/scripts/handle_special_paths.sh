@@ -25,6 +25,9 @@
 
 set -e
 
+# 启用 dotglob 以匹配隐藏文件（如 .xingyeB2B）
+shopt -s dotglob
+
 # 颜色定义
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -284,7 +287,7 @@ copy_with_normalized_names() {
 
 	# 遍历源目录中的所有项（文件和目录）
 	for item in "${src_dir}"/*; do
-		if [ -e "${item}" ]; then
+		if [ -e "${item}" ] || [ -L "${item}" ]; then
 			local item_name=$(basename "${item}")
 			local normalized_name=$(normalize_filename "${item_name}")
 
@@ -366,7 +369,7 @@ copy_dir_with_normalization() {
 
 	# 遍历源目录中的所有项（文件和目录）
 	for item in "${src_dir}"/*; do
-		if [ -e "${item}" ]; then
+		if [ -e "${item}" ] || [ -L "${item}" ]; then
 			local item_name=$(basename "${item}")
 			local normalized_name=$(normalize_filename "${item_name}")
 
@@ -599,7 +602,7 @@ process_non_standard_paths() {
 				if [ "${dir_name}" = "opt" ]; then
 					# 特殊检测: 是否为 linyaps 格式 /opt/apps/<id>/
 					local detected_ll_id
-					detected_ll_id=$(detect_linyaps_app_structure)
+					detected_ll_id=$(detect_linyaps_app_structure || true)
 					if [ -n "${detected_ll_id}" ]; then
 						process_linyaps_app_structure "${detected_ll_id}"
 						continue
@@ -614,7 +617,7 @@ process_non_standard_paths() {
 				# 特殊检测: 顶层 apps/ 可能是 linyaps 结构（无 opt/ 前缀）
 				if [ "${dir_name}" = "apps" ]; then
 					local detected_ll_id
-					detected_ll_id=$(detect_linyaps_app_structure_at "${SRC_DIR}/apps")
+					detected_ll_id=$(detect_linyaps_app_structure_at "${SRC_DIR}/apps" || true)
 					if [ -n "${detected_ll_id}" ]; then
 						process_linyaps_app_structure_at "${SRC_DIR}/apps" "${detected_ll_id}"
 						continue
@@ -646,13 +649,6 @@ process_non_standard_paths() {
 		elif [ -e "${top_item}" ] || [ -L "${top_item}" ]; then
 			# 处理顶层文件和符号链接（如 .desktop 文件、可执行文件等）
 			local file_name=$(basename "${top_item}")
-
-			# 跳过隐藏文件
-			case "${file_name}" in
-			.*)
-				continue
-				;;
-			esac
 
 			log_info "  处理顶层文件: ${file_name}"
 
