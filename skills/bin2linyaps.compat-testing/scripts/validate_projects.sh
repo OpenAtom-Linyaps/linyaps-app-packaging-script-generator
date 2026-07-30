@@ -168,16 +168,10 @@ check_icon_structure() {
         return
     fi
     local has_valid=0
-    while IFS= read -r -d '' png; do
+    while IFS= read -r -d '' icon; do
         has_valid=1
         break
-    done < <(find "$icons_dir" -name "*.png" -type f 2>/dev/null -print0)
-    if [[ $has_valid -eq 0 ]]; then
-        while IFS= read -r -d '' svg; do
-            has_valid=1
-            break
-        done < <(find "$icons_dir" -name "*.svg" -type f 2>/dev/null -print0)
-    fi
+    done < <(find "$icons_dir" -type f \( -name "*.png" -o -name "*.svg" -o -name "*.svgz" -o -name "*.xpm" -o -name "*.jpg" -o -name "*.jpeg" -o -name "*.tiff" -o -name "*.tif" -o -name "*.gif" -o -name "*.bmp" -o -name "*.ico" -o -name "*.xbm" \) 2>/dev/null -print0)
     if [[ $has_valid -eq 0 ]]; then
         echo "no_icon_files"
     else
