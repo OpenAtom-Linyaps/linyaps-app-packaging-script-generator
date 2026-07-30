@@ -23,19 +23,16 @@ EOF
 file=$(basename "$1")
 
 # apt-file 反向查找（不依赖本地安装，查询远程仓库索引）
-pkg=$(apt-file search -x "/${file}$" 2>/dev/null | cut -d: -f1 | sort -u)
+mapfile -t pkgs < <(apt-file search -x "/${file}$" 2>/dev/null | cut -d: -f1 | sort -u)
 
-if [ -z "$pkg" ]; then
+if [ ${#pkgs[@]} -eq 0 ]; then
     echo "[ERROR] 未找到包含文件 '$file' 的软件包" >&2
     exit 1
 fi
 
-# 获取 deb 下载 URL
-url=$(apt-get download --print-uris "$pkg" 2>/dev/null | awk -F"'" '{print $2}')
-
-if [ -z "$url" ]; then
-    echo "[ERROR] 无法获取 $pkg 的下载 URL" >&2
-    exit 1
-fi
-
-echo "$pkg  $url"
+for pkg in "${pkgs[@]}"; do
+    url=$(apt-get download --print-uris "$pkg" 2>/dev/null | awk -F"'" '{print $2}')
+    if [ -n "$url" ]; then
+        echo "$pkg  $url"
+    fi
+done
