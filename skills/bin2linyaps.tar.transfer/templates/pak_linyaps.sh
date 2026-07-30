@@ -11,7 +11,7 @@
 #=============================================================================
 
 srcType="tar"
-templateVer="2026.7.30.3"
+templateVer="2026.7.30.4"
 
 set -x
 
@@ -619,22 +619,45 @@ build_pak() {
 		local candidates
 		candidates=$(find "${binary_dir}" -type f -name "${binary_name}" -executable 2>/dev/null | sort)
 		if [ -z "${candidates}" ]; then
-			# Fallback: 仅按名称查找（检测文件存在但无执行权限）
-			candidates=$(find "${binary_dir}" -type f -name "${binary_name}" 2>/dev/null | sort)
+			# Fallback: 仅按名称查找（包括符号链接，支持损坏软链的冗余机制）
+			candidates=$(find "${binary_dir}" \( -type f -o -type l \) -name "${binary_name}" 2>/dev/null | sort)
 			if [ -n "${candidates}" ]; then
 				echo "[Warning] Binary '${binary_name}' found but is not executable:" >&2
 				echo "[Warning]   $(echo "${candidates}" | tr '\n' ' ')" >&2
 				echo "[Warning] Desktop Exec entry points to a non-executable file. Please add execute permission or verify the path." >&2
 			fi
 		fi
+		if [ -z "${candidates}" ]; then
+			# 兜底: 模糊名称搜索，应对 binary_name 与解压路径文件名不完全一致
+			candidates=$(find "${binary_dir}" -type f -name "*${binary_name}*" 2>/dev/null | sort)
+			if [ -n "${candidates}" ]; then
+				echo "[Warning] Binary '${binary_name}' not found by exact name, using fuzzy match:" >&2
+				echo "[Warning]   $(echo "${candidates}" | tr '\n' ' ')" >&2
+			fi
+		fi
 
 		while IFS= read -r candidate; do
 			# 解析真實路徑，跳過損壞的符號連結
 			local resolved
-			resolved=$(readlink -f "${candidate}" 2>/dev/null) || {
-				echo "  跳過損壞軟鏈: ${candidate}" >&2
-				continue
-			}
+			resolved=$(readlink -f "${candidate}" 2>/dev/null)
+			if [ -z "${resolved}" ]; then
+				if [ -L "${candidate}" ]; then
+					# 損壞的符號連結: 從軟鏈目標中提取文件名，在 binary_dir 中查找真實文件
+					local link_target
+					link_target=$(readlink "${candidate}")
+					local target_basename
+					target_basename=$(basename "${link_target}")
+					resolved=$(find "${binary_dir}" -type f -name "${target_basename}" 2>/dev/null | head -n 1)
+					if [ -z "${resolved}" ]; then
+						echo "  跳過損壞軟鏈: ${candidate}" >&2
+						continue
+					fi
+					echo "  通過軟鏈目標找到 binary: ${candidate} -> ${resolved}" >&2
+				else
+					echo "  跳過無法解析的路徑: ${candidate}" >&2
+					continue
+				fi
+			fi
 			# 檢查 ELF 架構兼容性
 			if check_elf_compatibility "${resolved}"; then
 				actual_binary="${candidate}"
