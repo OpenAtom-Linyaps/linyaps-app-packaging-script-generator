@@ -103,7 +103,7 @@ permission:
 
 - **DO NOT** 跳过验证步骤直接生成工程
 - **DO NOT** 在用户未确认的情况下覆盖已有工程
-- **DO NOT** 忽略兼容性检测失败继续处理
+- **兼容性测试为可选步骤**：仅当用户提示词包含"兼容测试"时才执行兼容性测试和缺失依赖修复；否则直接跳过
 - **ONLY** 处理deb包、tar归档包和AppImage应用到玲珑打包的转换工作
 - **WARNING** 若用户没有指定临时缓存目录，则默认所有临时缓存目录放置到当前工程目录而不是/tmp
 
@@ -364,6 +364,11 @@ b. **创建任务列表**
 
 ### Phase 2: 单包处理流程
 
+## 兼容性测试开关
+- 检查用户输入提示词是否包含"兼容测试"
+- 包含 → 标记 `COMPAT_TESTING_ENABLED=true`，后续执行兼容性测试 + 缺失依赖修复
+- 不包含 → 标记 `COMPAT_TESTING_ENABLED=false`，跳过所有兼容性测试和缺失依赖修复步骤
+
 根据包类型选择处理路径：
 
 #### 路径 A: deb 包处理
@@ -421,7 +426,7 @@ b. **创建任务列表**
 - **输出**: 验证报告（JSON格式）
 - **失败处理**: 如果验证失败，根据错误类型决定是否调用 `bin2linyaps.fix`
 
-#### Step 5: 兼容性测试
+#### Step 5: 兼容性测试（仅当 COMPAT_TESTING_ENABLED=true 时执行）
 调用 \`bin2linyaps.compat-testing\` skill 自动化执行：
 
 1. **构造子任务 JSON**（从 agent-config 和当前项目信息组装）：
@@ -460,7 +465,7 @@ b. **创建任务列表**
    - 存在 `failed` → 调用 `bin2linyaps.fix`
    - **输出**: 测试报告（汇总 + 分步骤详情）
 
-#### Step 5.5: 缺失依赖修复（条件执行）
+#### Step 5.5: 缺失依赖修复（条件执行，依赖 Step 5 的构建产物）
 如果前一阶段的兼容性测试生成了 `missing_deps.json` 或 `missing_deps.csv`，调用 \`bin2linyaps.external-missing-deps-fetch\` skill 自动修复模板依赖：
 
 1. **检查构建元数据**：读取 `reports/<pkg>/build_meta.json`，检查 `missing_deps_json` 或 `missing_deps_csv` 是否为非 null
@@ -533,7 +538,7 @@ b. **创建任务列表**
 - **输出**: 验证报告（JSON格式）
 - **失败处理**: 如果验证失败，根据错误类型决定是否调用 `bin2linyaps.fix`
 
-##### Step 3: 兼容性测试 (tar 包)
+##### Step 3: 兼容性测试（仅当 COMPAT_TESTING_ENABLED=true 时执行） (tar 包)
 调用 \`bin2linyaps.compat-testing\` skill 自动化执行：
 
 1. **构造子任务 JSON**（从 agent-config 和当前项目信息组装）
@@ -542,7 +547,7 @@ b. **创建任务列表**
 4. **读取报告**：全部 `passed` → 通过；存在 `failed` → 调用 `bin2linyaps.fix`
 - **输出**: 测试报告（汇总 + 分步骤详情）
 
-##### Step 3.5: 缺失依赖修复（条件执行）
+##### Step 3.5: 缺失依赖修复（条件执行，依赖 Step 3 的构建产物）
 如果前一阶段的兼容性测试生成了 `missing_deps.json` 或 `missing_deps.csv`，调用 \`bin2linyaps.external-missing-deps-fetch\` skill 自动修复模板依赖：
 
 1. **检查构建元数据**：读取 `reports/<pkg>/build_meta.json`，检查 `missing_deps_json` 或 `missing_deps_csv` 是否为非 null
@@ -599,7 +604,7 @@ b. **创建任务列表**
 - **输出**: 验证报告（JSON格式）
 - **失败处理**: 如果验证失败，根据错误类型决定是否调用 `bin2linyaps.fix`
 
-##### Step 3: 兼容性测试 (AppImage 包)
+##### Step 3: 兼容性测试（仅当 COMPAT_TESTING_ENABLED=true 时执行） (AppImage 包)
 调用 \`bin2linyaps.compat-testing\` skill 自动化执行：
 
 1. **构造子任务 JSON**（从 agent-config 和当前项目信息组装）
@@ -608,7 +613,7 @@ b. **创建任务列表**
 4. **读取报告**：全部 `passed` → 通过；存在 `failed` → 调用 `bin2linyaps.fix`
 - **输出**: 测试报告（汇总 + 分步骤详情）
 
-##### Step 3.5: 缺失依赖修复（条件执行）
+##### Step 3.5: 缺失依赖修复（条件执行，依赖 Step 3 的构建产物）
 如果前一阶段的兼容性测试生成了 `missing_deps.json` 或 `missing_deps.csv`，调用 \`bin2linyaps.external-missing-deps-fetch\` skill 自动修复模板依赖：
 
 1. **检查构建元数据**：读取 `reports/<pkg>/build_meta.json`，检查 `missing_deps_json` 或 `missing_deps_csv` 是否为非 null

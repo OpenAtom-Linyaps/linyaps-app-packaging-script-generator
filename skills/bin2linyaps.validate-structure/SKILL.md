@@ -147,7 +147,7 @@ bin2linyaps.fix (修复问题)
         ↓
 bin2linyaps.validate-structure (再次验证)
         ↓ (成功)
-linyaps.compat-testing (兼容性测试)
+linyaps.compat-testing (兼容性測試, 可选)
 ```
 
 ## 测试
