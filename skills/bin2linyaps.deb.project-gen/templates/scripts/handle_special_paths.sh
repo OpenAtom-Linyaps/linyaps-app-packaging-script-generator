@@ -438,7 +438,7 @@ detect_linyaps_app_structure() {
 
 # 在任意 base_dir 下处理 linyaps 格式的 <app_id>/ 目录
 # 将 files/ 内容直接平铺到 DEST_DIR（等同于 /usr/ 处理）
-# 跳过 entries/ 子目录（由 files_res/ 管线处理）
+# 将 entries/ 内容平铺到 DEST_DIR/share（entries/ 等同于 /usr/share/）
 process_linyaps_app_structure_at() {
 	local base_dir="$1"
 	local app_id="$2"
@@ -458,9 +458,11 @@ process_linyaps_app_structure_at() {
 		log_info "  未找到 files/ 子目录，跳过"
 	fi
 
-	# 跳过 entries/ 子目录（由 pak_linyaps.sh 的 files_res/ 管线处理）
+	# 将 entries/ 内容平铺到 DEST_DIR/share（entries/ 等同于 /usr/share/）
 	if [ -d "${app_base_dir}/entries" ]; then
-		log_info "  跳过 entries/ 子目录（由 files_res/ 管线处理）"
+		log_success "  处理 entries/ 目录（平铺到 binary/share/）..."
+		copy_dir_with_normalization "${app_base_dir}/entries" "${DEST_DIR}/share"
+		log_success "  entries/ 处理完成"
 	fi
 
 	# 处理其他顶层项（如有）
@@ -468,7 +470,7 @@ process_linyaps_app_structure_at() {
 		if [ -e "${item}" ] || [ -L "${item}" ]; then
 			local item_name=$(basename "${item}")
 			case "${item_name}" in
-			files | entries)
+			files)
 				continue
 				;;
 			*)
