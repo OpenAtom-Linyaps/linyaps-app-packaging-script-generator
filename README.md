@@ -394,26 +394,31 @@ ls bins/
 1. **资源处理**：复制 desktop/icon 文件，去重，修复路径
 2. **Wrapper 创建**：生成 wrapper 脚本处理原始目录结构
 3. **嵌套路径修复**：`validate_bin_nesting.sh` 修复 `binary/bin/bin/` 嵌套问题
-4. **非标准库软链修复**：`fix_nonstd_lib_symlinks.sh` 为非标准目录的 `.so` 创建软链
+4. **非标准库软链修复**：`handle_special_paths.sh --phase=libfix` 为非标准目录及多架构子目录的 `.so` 创建软链（含 SONAME 补全）
 5. **玲珑构建**：`ll-builder build --skip-output-check` + `ll-builder export`
 
-### fix_nonstd_lib_symlinks.sh
+### handle_special_paths.sh（双模式综合脚本）
 
-**功能**：扫描 `binary_dir` 下所有非 `lib/` 目录的 ELF 共享库，在 `lib/` 下创建相对路径软链接。
+**功能**：
+- `--phase=paths`：特殊路径转换（路径层级剥离 + 特殊字符标准化 + 软链修复），解压后调用
+- `--phase=libfix`：扫描 `binary_dir` 下所有非 `lib/` 目录及多架构子目录（如 `aarch64-linux-gnu/`）的 ELF 共享库，在 `lib/` 下创建相对路径软链接，并补全 SONAME 级软链（如 `libtiff.so.5`），保证 `$PREFIX/lib` 下动态链接器能加载
 
-**位置**：各 skill 的 `scripts/` 目录下各自维护一份
+> 注：原独立的 `fix_nonstd_lib_symlinks.sh` 逻辑已合并进本综合脚本的 `libfix` 阶段。
+
+**位置**：各 skill 的 `scripts/` 目录下各自维护一份（deb 规范源位于 `templates/scripts/`）
 
 **用法**：
 ```bash
-"${project_root}/scripts/fix_nonstd_lib_symlinks.sh" "${binary_dir}"
+"${project_root}/scripts/handle_special_paths.sh" --phase=paths "${binary_tmp_dir}" "${binary_dir}"
+"${project_root}/scripts/handle_special_paths.sh" --phase=libfix "${binary_dir}"
 ```
 
-**核心逻辑**：
-1. `find` 扫描全部 `*.so*` 文件（含软链），排除 `lib/` 目录
+**libfix 核心逻辑**：
+1. `find` 扫描全部 `*.so*` 文件（含软链），排除 `lib/` 目录本身（但保留多架构子目录）
 2. `readlink -f` 解析真实路径，`file` 命令过滤 ELF 共享库
 3. `realpath --relative-to` 计算相对路径，在 `lib/` 下创建软链
-4. 第二遍遍历已创建的版本化软链（如 `libfoo.so.1.0.0`），补充基名软链（`libfoo.so`）
-5. 幂等：已存在的正确软链跳过
+4. 第二遍为每个真实库补齐 SONAME 软链（`libfoo.so.A`）与基名软链（`libfoo.so`），覆盖 lib/ 根与多架构子目录
+5. 幂等：已存在的正确软链跳过，不破坏既有软链关系
 
 ## 常见问题
 

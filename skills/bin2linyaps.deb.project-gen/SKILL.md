@@ -76,8 +76,8 @@ mkdir -p "${project_dir}/templates/files_res"
 mkdir -p "${project_dir}/scripts"
 mkdir -p "${project_dir}/config"
 
-# 拷贝辅助脚本
-cp "scripts/handle_special_paths.sh" "${project_dir}/scripts/"
+# 拷贝辅助脚本（handle_special_paths.sh 规范源位于 templates/scripts/，为双模式综合脚本）
+cp "templates/scripts/handle_special_paths.sh" "${project_dir}/scripts/"
 chmod +x "${project_dir}/scripts/handle_special_paths.sh"
 cp "scripts/download_missing_deps.sh" "${project_dir}/scripts/"
 chmod +x "${project_dir}/scripts/download_missing_deps.sh"
@@ -386,7 +386,7 @@ build_pak() {
   #    例如：/opt/uTools/ -> binary/uTools/ (去掉 opt/ 层级)
   # 3. 支持包含空格、括号、中文、&、@、#、$ 等特殊字符的路径
   # 注意：此操作必须在所有软链动作之前完成，否则软链关系将被破坏
-  "${project_root}/scripts/handle_special_paths.sh" "${binary_tmp_dir}" "${binary_dir}"
+  "${project_root}/scripts/handle_special_paths.sh" --phase=paths "${binary_tmp_dir}" "${binary_dir}"
   
   # 创建 bin/ 目录用于存放可执行文件软链
   # 注意：此操作必须在特殊路径处理完成之后进行
@@ -641,7 +641,7 @@ build_pak() {
   #    例如：/opt/uTools/ -> binary/uTools/ (去掉 opt/ 层级)
   # 3. 支持包含空格、括号、中文、&、@、#、$ 等特殊字符的路径
   # 注意：此操作必须在所有软链动作之前完成，否则软链关系将被破坏
-  "${project_root}/scripts/handle_special_paths.sh" "${binary_tmp_dir}" "${binary_dir}"
+  "${project_root}/scripts/handle_special_paths.sh" --phase=paths "${binary_tmp_dir}" "${binary_dir}"
   
   # 创建 bin/ 目录用于存放可执行文件软链
   # 注意：此操作必须在特殊路径处理完成之后进行
@@ -698,8 +698,7 @@ build_pak() {
 |------|------|---------|
 | `dedup_desktop_files.sh` | desktop 文件去重 | 重复文件进入最终包，可能导致冲突 |
 | `validate_bin_nesting.sh` | bin 目录嵌套验证 | 嵌套路径问题导致启动失败 |
-| `fix_nonstd_lib_symlinks.sh` | 非标准目录 .so 软链修复 | 非 lib/ 目录的 ELF 库无法被 ldconfig 加载 |
-| `handle_special_paths.sh` | 特殊路径处理 | 非 `/usr` 路径文件丢失 |
+| `handle_special_paths.sh` | 特殊路径处理 + .so 软链修复（双模式） | 非 `/usr` 路径文件丢失 / 非 lib/ 目录的 ELF 库无法被 ldconfig 加载 |
 
 #### 1.2 禁止提前填充 command
 
@@ -764,7 +763,7 @@ export runtime_version=${runtime_version}
 # 错误3：跳过脚本调用
 # （缺失 dedup_desktop_files.sh 调用）
 # （缺失 validate_bin_nesting.sh 调用）
-# （缺失 fix_nonstd_lib_symlinks.sh 调用）
+# （缺失 handle_special_paths.sh --phase=libfix 调用）
 
 # 错误4：linglong.yaml command 被错误填充
 # command: ""  被错误地替换为 ${binary_name:-run.sh}
@@ -802,7 +801,7 @@ sed -i "s|^\s*runtime:.*|runtime: ${runtime_id}/${runtime_version}|" "${build_tm
 
 生成 `pak_linyaps.sh` 后，**必须**检查以下内容：
 
-- [ ] **脚本调用完整性**：`dedup_desktop_files.sh`、`validate_bin_nesting.sh`、`fix_nonstd_lib_symlinks.sh`、`handle_special_paths.sh` 调用存在
+- [ ] **脚本调用完整性**：`dedup_desktop_files.sh`、`validate_bin_nesting.sh`、`handle_special_paths.sh`（`--phase=paths` 与 `--phase=libfix`）调用存在
 - [ ] **command 未提前填充**：`build_dir_init()` 中无 `export command=` 行
 - [ ] **模板路径正确**：使用 `${project_root}/templates/linglong.yaml`（模板文件位于 templates/ 目录）
 - [ ] **资源路径正确**：使用 `${project_root}/templates/files_res`（资源文件位于 templates/ 目录）
@@ -988,8 +987,7 @@ validate_base_runtime
 **脚本调用完整性：**
 - [ ] `dedup_desktop_files.sh` 调用存在（desktop 文件去重）
 - [ ] `validate_bin_nesting.sh` 调用存在（bin 目录嵌套验证）
-- [ ] `fix_nonstd_lib_symlinks.sh` 调用存在（非标准目录 .so 软链修复）
-- [ ] `handle_special_paths.sh` 调用存在（特殊路径处理）
+- [ ] `handle_special_paths.sh` 调用存在（特殊路径处理 `--phase=paths`，非标准目录 .so 软链修复 `--phase=libfix`）
 
 **command/base/runtime 处理正确性：**
 - [ ] `build_dir_init()` 中**无** `export command=` 行（command 由 wrapper 机制设置）

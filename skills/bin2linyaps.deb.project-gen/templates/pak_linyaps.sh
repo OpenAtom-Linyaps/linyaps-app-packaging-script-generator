@@ -3,7 +3,7 @@
 set -x
 
 srcType="deb"
-templateVer="2026.8.7.1"
+templateVer="2026.8.7.4"
 
 # 默認 base/runtime 配置（可通過命令行參數覆蓋）
 DEFAULT_BASE_ID="org.deepin.base"
@@ -35,6 +35,7 @@ init_global_data() {
 
 	origin_version=""
 	ll_version=""
+	ll_id=""
 	binary_arch=""
 	linyaps_arch=""
 	src_path=""
@@ -62,6 +63,12 @@ init_global_data() {
 		--src_path)
 			src_path="$val"
 			;;
+		--package_id)
+			package_id="$val"
+			;;
+		--ll_id)
+			ll_id="$val"
+			;;
 		--output_dir)
 			output_dir="$val"
 			;;
@@ -85,6 +92,12 @@ init_global_data() {
 			;;
 		esac
 	done
+
+	# 統一管理 ll_id：由 --package_id / --ll_id 指定
+	# --package_id 為主要入口（與模板 yaml 的 ${package_id} 對應），--ll_id 可覆蓋
+	if [ -z "${ll_id}" ]; then
+		ll_id="${package_id}"
+	fi
 
 	# 初始化構建緩存目錄
 	if [ -n "${build_tmp_dir}" ]; then
@@ -479,6 +492,11 @@ validate_required_fields() {
 		exit 1
 	fi
 
+	if [ -z "${ll_id}" ]; then
+		echo "请指定 ll_id（可通过 --package_id 或 --ll_id 指定）" >&2
+		exit 1
+	fi
+
 	if [ -z "${linyaps_arch}" ]; then
 		linyaps_arch=$(uname -m)
 	fi
@@ -520,6 +538,7 @@ build_dir_init() {
 	## base/runtime 由 build_pak() 透過 sed 延遲注入
 	export prefix="\$PREFIX"
 	export ll_version=${ll_version}
+	export ll_id=${ll_id}
 	export linyaps_arch=${linyaps_arch}
 
 	# 注意：模板文件位于 templates/ 目录下
@@ -534,6 +553,17 @@ build_dir_init() {
 		echo "  version 字段已被 LLM 错误替换为绝对值，envsubst 将无法正确替换" >&2
 		echo "  请检查: ${project_root}/templates/linglong.yaml" >&2
 		echo "  两个 version 字段（顶层 version 和 package.version）都必须保持为 \${ll_version}" >&2
+		exit 1
+	fi
+
+	# 检测模板中的 id 字段是否仍为变量（不允许为实值）
+	# 正常模板中 id 应为 ${ll_id}，envsubst 后会替换为真实 package id
+	# 若已被硬编码成绝对值（如 com.example.app），envsubst 将无法正确替换
+	if ! grep -q '\${ll_id}' "${project_root}/templates/linglong.yaml" 2>/dev/null; then
+		echo "错误: linglong.yaml 模板中未找到 \${ll_id} 变量！" >&2
+		echo "  package.id 字段已被错误替换为绝对值，envsubst 将无法正确替换" >&2
+		echo "  请检查: ${project_root}/templates/linglong.yaml" >&2
+		echo "  package.id 必须保持为 \${ll_id}" >&2
 		exit 1
 	fi
 }
@@ -608,7 +638,7 @@ build_pak() {
 	#    例如：/opt/uTools/ -> binary/uTools/ (去掉 opt/ 层级)
 	# 3. 支持包含空格、括号、中文、&、@、#、$ 等特殊字符的路径
 	# 注意：此操作必须在所有软链动作之前完成，否则软链关系将被破坏
-	"${project_root}/scripts/handle_special_paths.sh" "${binary_tmp_dir}" "${binary_dir}"
+	"${project_root}/scripts/handle_special_paths.sh" --phase=paths "${binary_tmp_dir}" "${binary_dir}"
 
 	# === Linyaps App ID Detection ===
 	# 检测 handle_special_paths.sh 是否发现了 linyaps 格式的 /opt/apps/<id>/ 结构
@@ -617,10 +647,10 @@ build_pak() {
 
 		echo "========================================="
 		echo "检测到 linyaps 应用 ID: ${detected_package_id}"
-		echo "当前 package_id: ${package_id}"
+		echo "当前 ll_id: ${ll_id}"
 		echo "========================================="
 
-		if [ "${package_id}" != "${detected_package_id}" ]; then
+		if [ "${ll_id}" != "${detected_package_id}" ]; then
 			echo "ID 不一致，执行对齐操作..."
 
 			# 1. 更新 linglong.yaml 的 id 字段
@@ -631,8 +661,8 @@ build_pak() {
 
 			# 2. 更新 binary/ 下 desktop 文件中的路径引用
 			while IFS= read -r desktop_file; do
-				if grep -q "/opt/apps/${package_id}/" "${desktop_file}" 2>/dev/null; then
-					sed -i "s|/opt/apps/${package_id}/|/opt/apps/${detected_package_id}/|g" "${desktop_file}"
+				if grep -q "/opt/apps/${ll_id}/" "${desktop_file}" 2>/dev/null; then
+					sed -i "s|/opt/apps/${ll_id}/|/opt/apps/${detected_package_id}/|g" "${desktop_file}"
 					echo "已更新 desktop 路径: $(basename "${desktop_file}")"
 				fi
 			done < <(find "${binary_dir}" -name "*.desktop" -type f 2>/dev/null)
@@ -641,8 +671,8 @@ build_pak() {
 			local files_res_dir="${build_tmp_dir}/files_res"
 			if [ -d "${files_res_dir}" ]; then
 				while IFS= read -r desktop_file; do
-					if grep -q "/opt/apps/${package_id}/" "${desktop_file}" 2>/dev/null; then
-						sed -i "s|/opt/apps/${package_id}/|/opt/apps/${detected_package_id}/|g" "${desktop_file}"
+					if grep -q "/opt/apps/${ll_id}/" "${desktop_file}" 2>/dev/null; then
+						sed -i "s|/opt/apps/${ll_id}/|/opt/apps/${detected_package_id}/|g" "${desktop_file}"
 						echo "已更新 files_res desktop 路径: $(basename "${desktop_file}")"
 					fi
 				done < <(find "${files_res_dir}" -name "*.desktop" -type f 2>/dev/null)
@@ -650,7 +680,7 @@ build_pak() {
 
 			# 4. 提示用户重命名工程目录
 			echo ""
-			echo "⚠ 检测到的 app_id (${detected_package_id}) 与当前 package_id (${package_id}) 不一致！"
+			echo "⚠ 检测到的 app_id (${detected_package_id}) 与当前 ll_id (${ll_id}) 不一致！"
 			echo "   工程目录名仍需修复为 CI_ll_${detected_package_id}"
 			echo "   请构建完成后执行以下命令："
 			echo "   fix_package_id.sh \"${project_root}\" --new-id \"${detected_package_id}\" --rename-dir"
@@ -925,10 +955,6 @@ WRAPPER_EOF
 	# 检测 binary/bin/bin/ 嵌套问题并自动修复
 	"${project_root}/scripts/validate_bin_nesting.sh" "${binary_dir}" --fix
 
-	# 修復非標準目錄的 .so 軟鏈接
-	# 在 binary/lib/ 下為所有非標準目錄的 ELF 共享庫創建相對路徑軟鏈接
-	"${project_root}/scripts/fix_nonstd_lib_symlinks.sh" "${binary_dir}"
-
 	# 外部缺失依賴下載與解壓（由 bin2linyaps.external-missing-deps-fetch skill 提供）
 	# 檢測到 missing_deps_urls.conf 時，自動調用 download_missing_deps.sh 將缺失 deb 下載并解壓到 binary_dir
 	# 即使下載或解壓失敗也不阻塞後續構建流程（非阻塞設計）
@@ -942,6 +968,11 @@ WRAPPER_EOF
 	else
 		echo "未檢測到缺失依賴配置 (missing_deps_urls.conf)，跳過"
 	fi
+
+	# 修复非标准目录的 .so 软链接（必须最后执行，确保覆盖所有下载解压进来的库）
+	# 在 binary/lib/ 下为所有非标准目录及多架构子目录的 ELF 共享库创建相对路径软链接，
+	# 并补全 SONAME 级软链（如 libtiff.so.5），保证 $PREFIX/lib 下动态链接器能加载
+	"${project_root}/scripts/handle_special_paths.sh" --phase=libfix "${binary_dir}"
 
 	# 創建玲瓏構建標識文件
 	# binary/ 目錄對應 linglong.yaml 中的 ${prefix}

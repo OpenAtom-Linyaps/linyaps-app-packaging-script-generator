@@ -88,7 +88,7 @@ echo "  提取目录结构:"
 ls -la "${EXTRACT_DIR}/" 2>/dev/null | head -5
 echo ""
 
-bash "${HANDLE_SCRIPT}" "${EXTRACT_DIR}" "${OUTPUT_DIR}" --verbose 2>&1
+bash "${HANDLE_SCRIPT}" --phase=paths "${EXTRACT_DIR}" "${OUTPUT_DIR}" --verbose 2>&1
 echo ""
 
 # 步骤 4: 验证结果

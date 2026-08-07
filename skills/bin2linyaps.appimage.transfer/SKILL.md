@@ -292,6 +292,7 @@ cp "${skill_root}/scripts/analyze_entry_script.sh" "${project_dir}/scripts/"
 cp "${skill_root}/scripts/dedup_desktop_files.sh" "${project_dir}/scripts/"
 cp "${skill_root}/scripts/validate_bin_nesting.sh" "${project_dir}/scripts/"
 cp "${skill_root}/scripts/download_missing_deps.sh" "${project_dir}/scripts/"
+cp "${skill_root}/scripts/handle_special_paths.sh" "${project_dir}/scripts/"
 chmod +x "${project_dir}/scripts/"*.sh
 
 # 拷貝白名單配置
@@ -337,7 +338,7 @@ fi
 | 構建時 | pak_linyaps.sh | 更新 desktop 的 Exec（替換為 wrapper） |
 | 構建時 | pak_linyaps.sh | Desktop 文件去重（dedup_desktop_files.sh 兩步去重） |
 | 構建時 | pak_linyaps.sh | 嵌套 bin/ 路徑驗證（validate_bin_nesting.sh） |
-| 構建時 | pak_linyaps.sh | 非標準目錄 .so 軟鏈修復（fix_nonstd_lib_symlinks.sh） |
+| 構建時 | pak_linyaps.sh | 非標準目錄 .so 軟鏈修復（handle_special_paths.sh --phase=libfix，含 SONAME 補全） |
 | 構建時 | pak_linyaps.sh | **ll-builder build** — 實際構建玲瓏包 |
 | 構建時 | pak_linyaps.sh | **ll-builder export** — 導出 .layer 文件到 output_dir |
 | 構建時 | pak_linyaps.sh | 可選 ll-builder push（auto_push=true 時） |
@@ -372,7 +373,7 @@ main()
   │   ├─ 更新 linglong.yaml command + base/runtime + desktop Exec
   │   ├─ dedup_desktop_files.sh 兩步去重
   │   ├─ validate_bin_nesting.sh 嵌套 bin/ 驗證
-  │   ├─ fix_nonstd_lib_symlinks.sh 非標準 .so 軟鏈修復
+  │   ├─ handle_special_paths.sh --phase=libfix 非標準 .so 軟鏈修復（含 SONAME 補全）
   │   ├─ 創建 .linyaps_genius 標識文件
   │   ├─ ll-builder build --skip-output-check
   │   ├─ ll-builder export --no-develop --layer
@@ -462,7 +463,7 @@ AppImage 版本使用特殊的 wrapper 機制，借鑒 ll-pica 的 AppRun 方案
 - `parse_build_config.sh`：JSON 配置解析腳本（解析 `build_config.json`，驗證必填欄位，輸出 `key=value` 格式）
 - `dedup_desktop_files.sh`：Desktop 文件去重腳本（兩步去重：binary vs files_res + files_res 內部）
 - `validate_bin_nesting.sh`：嵌套 bin/ 路徑驗證腳本
-- `fix_nonstd_lib_symlinks.sh`：非標準目錄 .so 軟鏈修復腳本，在 `lib/` 下為非標準目錄的 ELF 共享庫創建相對路徑軟鏈接
+- `handle_special_paths.sh`（`--phase=libfix`）：非標準目錄及多架構子目錄 .so 軟鏈修復腳本，在 `lib/` 下為 ELF 共享庫創建相對路徑軟鏈接，並補全 SONAME 級軟鏈（如 `libtiff.so.5`）；原 `fix_nonstd_lib_symlinks.sh` 已合併進本階段
 
 ### 外部工具
 - `jq`：JSON 解析工具（`parse_build_config.sh` 依賴）

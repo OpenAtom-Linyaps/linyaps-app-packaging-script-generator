@@ -310,8 +310,8 @@ chmod +x "${project_dir}/scripts/download_missing_deps.sh"
 cp "${skill_root}/scripts/analyze_entry_script.sh" "${project_dir}/scripts/"
 chmod +x "${project_dir}/scripts/analyze_entry_script.sh"
 
-# 拷貝路徑處理腳本（與 deb 版共用，處理 /usr/、/opt/ 等路徑轉換 + 特殊字符標準化）
-cp "${skill_root}/../bin2linyaps.deb.project-gen/templates/scripts/handle_special_paths.sh" "${project_dir}/scripts/"
+# 拷貝路徑處理綜合腳本（雙模式：--phase=paths 路徑轉換 + --phase=libfix .so 軟鏈修復）
+cp "${skill_root}/scripts/handle_special_paths.sh" "${project_dir}/scripts/"
 chmod +x "${project_dir}/scripts/handle_special_paths.sh"
 
 # 拷貝白名單配置
@@ -352,7 +352,7 @@ fi
 | 構建時 | pak_linyaps.sh | 更新 desktop 的 Exec（替換為 wrapper 絕對路徑） |
 | 構建時 | pak_linyaps.sh | Desktop 文件去重（dedup_desktop_files.sh 兩步去重） |
 | 構建時 | pak_linyaps.sh | 嵌套 bin/ 路徑驗證（validate_bin_nesting.sh） |
-| 構建時 | pak_linyaps.sh | 非標準目錄 .so 軟鏈修復（fix_nonstd_lib_symlinks.sh） |
+| 構建時 | pak_linyaps.sh | 非標準目錄 .so 軟鏈修復（handle_special_paths.sh --phase=libfix，含 SONAME 補全） |
 | 構建時 | pak_linyaps.sh | **ll-builder build** — 實際構建玲瓏包 |
 | 構建時 | pak_linyaps.sh | **ll-builder export** — 導出 .layer 文件到 output_dir |
 | 構建時 | pak_linyaps.sh | 可選 ll-builder push（auto_push=true 時） |
@@ -375,14 +375,14 @@ main()
   │   └─ envsubst 生成 linglong.yaml
   ├─ build_pak()               # 核心構建
   │   ├─ tar -xf 解壓
-  │   ├─ handle_special_paths.sh 路徑轉換
+  │   ├─ handle_special_paths.sh --phase=paths 路徑轉換
   │   ├─ 自動偵測 binary_name（desktop → scan_executables.sh）
   │   ├─ 入口腳本風險檢測（analyze_entry_script.sh）
   │   ├─ 創建 wrapper 腳本（binary/bin/*.wrapper）
   │   ├─ 更新 linglong.yaml command + base/runtime + desktop Exec
   │   ├─ dedup_desktop_files.sh 兩步去重
   │   ├─ validate_bin_nesting.sh 嵌套 bin/ 驗證
-  │   ├─ fix_nonstd_lib_symlinks.sh 非標準 .so 軟鏈修復
+  │   ├─ handle_special_paths.sh --phase=libfix 非標準 .so 軟鏈修復（含 SONAME 補全）
   │   ├─ 創建 .linyaps_genius 標識文件
   │   ├─ ll-builder build --skip-output-check
   │   ├─ ll-builder export --no-develop --layer
@@ -448,10 +448,10 @@ build: |
 ### 構建腳本（scripts/）
 - `parse_build_config.sh`：JSON 配置解析腳本（解析 `build_config.json`，驗證必填欄位，輸出 `key=value` 格式）
 - `scan_executables.sh`：可執行檔掃描腳本（tar 版特有，用於無 desktop 時的自動偵測）
-- `handle_special_paths.sh`：路徑轉換腳本（處理 `/usr/`、`/opt/` 等路徑層級剝離 + 特殊字符標準化 + 軟鏈修復），與 deb 版共用
+- `handle_special_paths.sh`：雙模式綜合腳本（`--phase=paths` 路徑轉換：處理 `/usr/`、`/opt/` 等路徑層級剝離 + 特殊字符標準化 + 軟鏈修復；`--phase=libfix` 非標準 .so 軟鏈修復），與 deb 版共用
 - `dedup_desktop_files.sh`：Desktop 文件去重腳本（兩步去重：binary vs files_res + files_res 內部），與 deb 版共用
 - `validate_bin_nesting.sh`：嵌套 bin/ 路徑驗證腳本，與 deb 版共用
-- `fix_nonstd_lib_symlinks.sh`：非標準目錄 .so 軟鏈修復腳本，在 `lib/` 下為非標準目錄的 ELF 共享庫創建相對路徑軟鏈接
+- `handle_special_paths.sh`（`--phase=libfix`）：非標準目錄及多架構子目錄 .so 軟鏈修復腳本，在 `lib/` 下為 ELF 共享庫創建相對路徑軟鏈接，並補全 SONAME 級軟鏈（如 `libtiff.so.5`）；原 `fix_nonstd_lib_symlinks.sh` 已合併進本階段
 
 ### 外部工具
 - `jq`：JSON 解析工具（`parse_build_config.sh` 依賴）

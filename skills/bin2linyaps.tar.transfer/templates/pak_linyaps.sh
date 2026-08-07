@@ -11,7 +11,7 @@
 #=============================================================================
 
 srcType="tar"
-templateVer="2026.7.30.4"
+templateVer="2026.8.7.4"
 
 set -x
 
@@ -46,6 +46,7 @@ init_global_data() {
 
 	origin_version=""
 	ll_version=""
+	ll_id=""
 	binary_arch=""
 	linyaps_arch=""
 	output_dir=""
@@ -99,6 +100,9 @@ init_global_data() {
 		--package_id)
 			package_id="$val"
 			;;
+		--ll_id)
+			ll_id="$val"
+			;;
 		--app_name)
 			app_name="$val"
 			;;
@@ -113,6 +117,11 @@ init_global_data() {
 			;;
 		esac
 	done
+
+	# 統一管理 ll_id：由 --package_id / --ll_id 指定
+	if [ -z "${ll_id}" ]; then
+		ll_id="${package_id}"
+	fi
 
 	# 初始化構建緩存目錄
 	if [ -n "${build_tmp_dir}" ]; then
@@ -480,6 +489,11 @@ validate_required_fields() {
 		exit 1
 	fi
 
+	if [ -z "${ll_id}" ]; then
+		echo "請指定 ll_id（可通過 --package_id 或 --ll_id 指定）" >&2
+		exit 1
+	fi
+
 	if [ -z "${linyaps_arch}" ]; then
 		linyaps_arch=$(uname -m)
 	fi
@@ -524,6 +538,7 @@ build_dir_init() {
 	## base/runtime 由 build_pak() 透過 sed 延遲注入
 	export prefix="\$PREFIX"
 	export package_id="${package_id}"
+	export ll_id=${ll_id}
 	export app_name="${app_name}"
 	export description="${description}"
 	export ll_version=${ll_version}
@@ -541,6 +556,15 @@ build_dir_init() {
 		echo "  version 字段已被 LLM 錯誤替換為絕對值，envsubst 將無法正確替換" >&2
 		echo "  請檢查: ${project_root}/templates/linglong.yaml" >&2
 		echo "  兩個 version 字段（頂層 version 和 package.version）都必須保持為 \${ll_version}" >&2
+		exit 1
+	fi
+
+	# 檢測模板中的 id 字段是否仍為變量（不允許為實值）
+	if ! grep -q '\${ll_id}' "${project_root}/templates/linglong.yaml" 2>/dev/null; then
+		echo "錯誤: linglong.yaml 模板中未找到 \${ll_id} 變量！" >&2
+		echo "  package.id 字段已被錯誤替換為絕對值，envsubst 將無法正確替換" >&2
+		echo "  請檢查: ${project_root}/templates/linglong.yaml" >&2
+		echo "  package.id 必須保持為 \${ll_id}" >&2
 		exit 1
 	fi
 }
@@ -569,7 +593,7 @@ build_pak() {
 	#    例如：/opt/uTools/ -> binary/uTools/ (去掉 opt/ 層級)
 	# 3. 支持包含空格、括號、中文、&、@、#、$ 等特殊字符的路徑
 	# 注意：此操作必須在所有軟鏈動作之前完成，否則軟鏈關係將被破壞
-	"${project_root}/scripts/handle_special_paths.sh" "${binary_tmp_dir}" "${binary_dir}"
+	"${project_root}/scripts/handle_special_paths.sh" --phase=paths "${binary_tmp_dir}" "${binary_dir}"
 
 	# 創建 bin/ 目錄用於存放 wrapper 腳本
 	# 注意：此操作必須在特殊路徑處理完成之後進行
@@ -829,10 +853,6 @@ WRAPPER_EOF
 	# 檢測 binary/bin/bin/ 嵌套問題並自動修復
 	"${project_root}/scripts/validate_bin_nesting.sh" "${binary_dir}" --fix
 
-	# 修復非標準目錄的 .so 軟鏈接
-	# 在 binary/lib/ 下為所有非標準目錄的 ELF 共享庫創建相對路徑軟鏈接
-	"${project_root}/scripts/fix_nonstd_lib_symlinks.sh" "${binary_dir}"
-
 	# 外部缺失依賴下載與解壓（由 bin2linyaps.external-missing-deps-fetch skill 提供）
 	# 檢測到 missing_deps_urls.conf 時，自動調用 download_missing_deps.sh 將缺失 deb 下載并解壓到 binary_dir
 	# 即使下載或解壓失敗也不阻塞後續構建流程（非阻塞設計）
@@ -846,6 +866,11 @@ WRAPPER_EOF
 	else
 		echo "未檢測到缺失依賴配置 (missing_deps_urls.conf)，跳過"
 	fi
+
+	# 修復非標準目錄的 .so 軟鏈接（必須在打包前最後執行，確保覆蓋所有下載解壓進來的庫）
+	# 在 binary/lib/ 下為所有非標準目錄及多架構子目錄的 ELF 共享庫創建相對路徑軟鏈接，
+	# 並補全 SONAME 級軟鏈（如 libtiff.so.5），保證 $PREFIX/lib 下動態鏈接器能加載
+	"${project_root}/scripts/handle_special_paths.sh" --phase=libfix "${binary_dir}"
 
 	# 創建玲瓏構建標識文件
 	# binary/ 目錄對應 linglong.yaml 中的 ${prefix}

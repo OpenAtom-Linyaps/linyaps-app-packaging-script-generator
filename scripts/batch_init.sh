@@ -310,9 +310,9 @@ create_project_structure() {
     mkdir -p "${project_dir}/scripts"
     mkdir -p "${project_dir}/config"
 
-    # 拷贝辅助脚本
-    if [[ -f "${WORKSPACE_ROOT}/skills/bin2linyaps.deb.project-gen/scripts/handle_special_paths.sh" ]]; then
-        cp "${WORKSPACE_ROOT}/skills/bin2linyaps.deb.project-gen/scripts/handle_special_paths.sh" "${project_dir}/scripts/"
+    # 拷贝辅助脚本（handle_special_paths.sh 规范源在 templates/scripts/，为双模式综合脚本）
+    if [[ -f "${WORKSPACE_ROOT}/skills/bin2linyaps.deb.project-gen/templates/scripts/handle_special_paths.sh" ]]; then
+        cp "${WORKSPACE_ROOT}/skills/bin2linyaps.deb.project-gen/templates/scripts/handle_special_paths.sh" "${project_dir}/scripts/"
         chmod +x "${project_dir}/scripts/handle_special_paths.sh"
     fi
     if [[ -f "${WORKSPACE_ROOT}/skills/bin2linyaps.deb.project-gen/scripts/download_missing_deps.sh" ]]; then

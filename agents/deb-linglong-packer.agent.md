@@ -127,8 +127,7 @@ permission:
 - **DO NOT** 简化或删除 `pak_linyaps.sh` 中的脚本调用
   - 必须保留 `dedup_desktop_files.sh` 调用（desktop 文件去重）
   - 必须保留 `validate_bin_nesting.sh` 调用（bin 目录嵌套验证）
-  - 必须保留 `fix_nonstd_lib_symlinks.sh` 调用（非标准目录 .so 软链修复）
-  - 必须保留 `handle_special_paths.sh` 调用（特殊路径处理）
+  - 必须保留 `handle_special_paths.sh` 调用（特殊路径处理 `--phase=paths` 与 .so 软链修复 `--phase=libfix`，原 `fix_nonstd_lib_symlinks.sh` 逻辑已合并进该综合脚本）
 
 - **DO NOT** 在 `pak_linyaps.sh` 的 envsubst 阶段导出或填充 `command` 变量
   - `command` 必须由 wrapper 机制在构建时动态设置
