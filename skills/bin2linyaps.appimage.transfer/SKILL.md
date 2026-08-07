@@ -146,17 +146,18 @@ eval "$(bash "${skill_root}/scripts/parse_build_config.sh" build_config.json)"
 - 詢問可選參數（使用默認值）
 - 收集完成後根據 `binary_name` 決定後續流程
 
-### Step 4: 解析 Exec 命令（AppRun 優先策略）
+### Step 4: 解析 Exec 命令（binary_name 優先策略）
 
-**注意**：此步驟主要用於元數據提取。實際執行入口由 `pak_linyaps.sh` 在構建時根據 AppRun 優先策略決定。
+**注意**：此步驟主要用於元數據提取。實際執行入口由 `pak_linyaps.sh` 在構建時根據 binary_name 優先策略決定。
 
-**AppRun 優先策略**（借鑒 ll-pica 方案）：
+**binary_name 優先策略**（借鑒 ll-pica 方案）：
 
 | 優先級 | 檢測條件 | wrapper 目標 | 說明 |
 |--------|---------|-------------|------|
-| 1 | `AppRun` 存在 | `lib/${APP_PREFIX}/AppRun` | AppImage 標準入口，最可靠 |
-| 2 | `AppRun.wrapped` 存在 | `lib/${APP_PREFIX}/AppRun.wrapped` | 部分 AppImage 使用 wrapped 入口 |
-| 3 | Fallback | `lib/${APP_PREFIX}/${resolved_exec}` | 從 desktop Exec 解析 |
+| 1 | `binary_name` 顯式聲明 | `lib/${APP_PREFIX}/${binary_name}` | 用戶指定，最高優先 |
+| 2 | `AppRun` 存在 | `lib/${APP_PREFIX}/AppRun` | AppImage 標準入口，最可靠 |
+| 3 | `AppRun.wrapped` 存在 | `lib/${APP_PREFIX}/AppRun.wrapped` | 部分 AppImage 使用 wrapped 入口 |
+| 4 | Fallback | `lib/${APP_PREFIX}/${resolved_exec}` | 從 desktop Exec 解析 |
 
 調用 `resolve_exec_command.sh` 從 desktop 文件中提取 Exec 命令（作為 fallback）：
 
@@ -180,7 +181,7 @@ binary_name=$("${skill_root}/scripts/resolve_exec_command.sh" "${extract_dir}/sq
 5. 提取第一個參數（binary name 或路徑）
 6. 如果是路徑，提取文件名
 
-**失敗處理**：若無法提取 Exec 命令，使用默認值 `AppRun`（與 AppRun 優先策略一致）
+**失敗處理**：若無法提取 Exec 命令，使用默認值 `AppRun`（作為最後 fallback）
 
 ### Step 5: Icon 處理（XDG 規範）
 
@@ -330,7 +331,7 @@ fi
 | 構建時 | pak_linyaps.sh | 解壓 AppImage（extract_appimage.sh） |
 | 構建時 | pak_linyaps.sh | 入口腳本風險檢測（analyze_entry_script.sh） |
 | 構建時 | pak_linyaps.sh | 保持 squashfs-root 原始結構（lib/${APP_PREFIX}/） |
-| 構建時 | pak_linyaps.sh | 創建 wrapper 腳本（AppRun 優先策略，bin/${APP_PREFIX}.wrapper） |
+| 構建時 | pak_linyaps.sh | 創建 wrapper 腳本（binary_name 優先策略，bin/${APP_PREFIX}.wrapper） |
 | 構建時 | pak_linyaps.sh | 更新 linglong.yaml 的 command（sed 替換為數組格式） |
 | 構建時 | pak_linyaps.sh | 更新 linglong.yaml 的 base/runtime（sed 延遲注入） |
 | 構建時 | pak_linyaps.sh | 更新 desktop 的 Exec（替換為 wrapper） |
@@ -360,7 +361,8 @@ main()
   ├─ build_pak()               # 核心構建
   │   ├─ extract_appimage.sh 解壓 AppImage
   │   ├─ 保持 squashfs-root 原始結構（lib/${APP_PREFIX}/）
-  │   ├─ AppRun 優先策略（借鑒 ll-pica）
+  │   ├─ 入口優先策略（借鑒 ll-pica）
+  │   │   ├─ binary_name 顯式聲明 → wrapper_target="${binary_name}"
   │   │   ├─ 檢測 AppRun 是否存在 → wrapper_target="AppRun"
   │   │   ├─ 檢測 AppRun.wrapped → wrapper_target="AppRun.wrapped"
   │   │   └─ Fallback: resolve_exec_command.sh 解析 desktop Exec
@@ -394,7 +396,7 @@ build: |
   touch ${prefix}/.linyaps_genius
 ```
 
-### Wrapper 機制（AppRun 優先策略）
+### Wrapper 機制（binary_name 優先策略）
 
 AppImage 版本使用特殊的 wrapper 機制，借鑒 ll-pica 的 AppRun 方案：
 
@@ -402,14 +404,16 @@ AppImage 版本使用特殊的 wrapper 機制，借鑒 ll-pica 的 AppRun 方案
 
 | 優先級 | 檢測條件 | wrapper 目標 | 說明 |
 |--------|---------|-------------|------|
-| 1 | `AppRun` 存在 | `lib/${APP_PREFIX}/AppRun` | AppImage 標準入口，最可靠 |
-| 2 | `AppRun.wrapped` 存在 | `lib/${APP_PREFIX}/AppRun.wrapped` | 部分 AppImage 使用 wrapped 入口 |
-| 3 | Fallback | `lib/${APP_PREFIX}/${resolved_exec}` | 從 desktop Exec 解析 |
+| 1 | `binary_name` 顯式聲明 | `lib/${APP_PREFIX}/${binary_name}` | 用戶指定，最高優先 |
+| 2 | `AppRun` 存在 | `lib/${APP_PREFIX}/AppRun` | AppImage 標準入口，最可靠 |
+| 3 | `AppRun.wrapped` 存在 | `lib/${APP_PREFIX}/AppRun.wrapped` | 部分 AppImage 使用 wrapped 入口 |
+| 4 | Fallback | `lib/${APP_PREFIX}/${resolved_exec}` | 從 desktop Exec 解析 |
 
 **設計原則**：
 - 保持 AppImage 原始目錄結構（squashfs-root）
 - 始終使用相對路徑 `exec`，不使用 `cd`（wrapper 設計原則）
-- AppRun 優先：借鑒 ll-pica 方案，直接使用 AppImage 自帶的 AppRun
+- binary_name 優先：用戶顯式聲明的入口優先於 AppRun 自動檢測
+- AppRun 次之：借鑒 ll-pica 方案，直接使用 AppImage 自帶的 AppRun
 - Fallback 機制：當 AppRun 缺失時，從 desktop 文件解析 Exec 命令
 - `resolve_exec_command.sh` 作為元數據提取工具，同時也是 AppRun 缺失時的 fallback
 
