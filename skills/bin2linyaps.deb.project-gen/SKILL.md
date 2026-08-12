@@ -423,7 +423,7 @@ build_pak() {
   touch "${binary_dir}/.linyaps_genius"
   echo "Created identity file: ${binary_dir}/.linyaps_genius"
 
-  ll-builder build --skip-output-check
+  ll-builder build ${build_extra_args}   # 默认 --skip-output-check，可用 --build_extra_args 覆盖
   building_status=$?
   if [ "${building_status}" = "0" ]; then
     echo "Building success!"
@@ -518,6 +518,7 @@ with open('config/packages.csv', 'r') as f:
 | `--runtime_id` | 否 | 应用运行时ID（如 org.deepin.runtime.dtk） |
 | `--runtime_version` | 否 | 应用运行时版本（如 25.2.2） |
 | `--whitelist` | 否 | 白名单配置文件路径，未指定时按优先级自动查找（工程→skill→全局） |
+| `--build_extra_args` | 否 | 额外构建参数，原样追加到 `ll-builder build`（默认 `--skip-output-check`，覆盖时需自行包含，如 `--skip-output-check --skip-strip-symbols`） |
 
 **注意：**
 - `${command}` 在模板中为占位符，实际值由 `pak_linyaps.sh` 在构建时通过 wrapper 机制动态设置

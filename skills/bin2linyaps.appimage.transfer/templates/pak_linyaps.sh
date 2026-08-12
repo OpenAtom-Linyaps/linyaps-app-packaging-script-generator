@@ -13,7 +13,7 @@
 #=============================================================================
 
 srcType="appimage"
-templateVer="2026.8.7.4"
+templateVer="2026.8.12.1"
 
 set -x
 
@@ -34,6 +34,8 @@ whitelist_file=""
 # Options
 auto_clean="false"
 auto_push="${push}"
+## 额外构建参数，原样追加到 ll-builder build（默认含 --skip-output-check）
+build_extra_args="--skip-output-check"
 repo_name="nightly"
 repo_url="https://repo-dev.cicd.getdeepin.org"
 push_account_user=""
@@ -57,8 +59,7 @@ init_global_data() {
 	project_root="$(dirname "$(readlink -f "$0")")"
 	default_output_dir="${project_root}/bins"
 
-	COMMANDLINE="$@"
-	for COMMAND in $COMMANDLINE; do
+	for COMMAND in "$@"; do
 		key=$(echo $COMMAND | awk -F= '{print $1}')
 		val=$(echo $COMMAND | awk -F= '{print $2}')
 
@@ -116,6 +117,9 @@ init_global_data() {
 			;;
 		--icon_path)
 			icon_path="$val"
+			;;
+		--build_extra_args)
+			build_extra_args="$val"
 			;;
 		esac
 	done
@@ -691,7 +695,7 @@ WRAPPER_EOF
 	echo "Created identity file: ${binary_dir}/.linyaps_genius"
 
 	## Building & Exporting
-	ll-builder build --skip-output-check
+	ll-builder build ${build_extra_args}
 	building_status=$?
 	if [ "${building_status}" = "0" ]; then
 		echo "Building success ! "

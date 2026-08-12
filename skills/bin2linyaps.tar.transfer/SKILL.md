@@ -49,7 +49,8 @@ JSON 結構分為 `main`（必填）和 `optional`（可選）兩個分組：
     "runtime_id": "org.deepin.runtime.dtk",
     "runtime_version": "25.2.2",
     "linyaps_arch": "x86_64",
-    "output_dir": "./output"
+    "output_dir": "./output",
+    "build_extra_args": "--skip-output-check --skip-strip-symbols"
   }
 }
 ```
@@ -75,6 +76,7 @@ JSON 結構分為 `main`（必填）和 `optional`（可選）兩個分組：
 | `runtime_version` | runtime 層版本 | ❌ | `25.2.2` |
 | `linyaps_arch` | 目標架構 | ❌ | `x86_64` |
 | `output_dir` | 輸出目錄 | ❌ | `./output` |
+| `build_extra_args` | 額外構建參數，原樣追加到 `ll-builder build`（默認 `--skip-output-check`，覆寫時需自行包含） | ❌ | `--skip-output-check --skip-strip-symbols` |
 
 ## 批量初始化
 
@@ -384,7 +386,7 @@ main()
   │   ├─ validate_bin_nesting.sh 嵌套 bin/ 驗證
   │   ├─ handle_special_paths.sh --phase=libfix 非標準 .so 軟鏈修復（含 SONAME 補全）
   │   ├─ 創建 .linyaps_genius 標識文件
-  │   ├─ ll-builder build --skip-output-check
+  │   ├─ ll-builder build ${build_extra_args}   # 默認 --skip-output-check，可用 --build_extra_args 覆寫
   │   ├─ ll-builder export --no-develop --layer
   │   └─ 移動 *.layer 到 output_dir
   ├─ push_dev() [可選]         # ll-builder push 到倉庫
