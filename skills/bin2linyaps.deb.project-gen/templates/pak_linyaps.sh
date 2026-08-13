@@ -3,7 +3,7 @@
 set -x
 
 srcType="deb"
-templateVer="2026.8.12.1"
+templateVer="2026.8.13.1"
 
 # 默認 base/runtime 配置（可通過命令行參數覆蓋）
 DEFAULT_BASE_ID="org.deepin.base"
@@ -18,6 +18,10 @@ runtime_version="${DEFAULT_RUNTIME_VERSION}"
 
 # 白名單配置文件路徑（可通過 --whitelist 參數或環境變量覆蓋）
 whitelist_file=""
+
+# 嵌套腳本文件名（僅填文件名，路徑自動拼接為 ${project_root}/<文件名>）
+# 空值表示關閉嵌套腳本功能，command/desktop Exec 指向原 wrapper
+nested_script=""
 
 # Options
 ## Auto cleaning, default blank value means "true/TRUE"
@@ -93,6 +97,9 @@ init_global_data() {
 			;;
 		--build_extra_args)
 			build_extra_args="$val"
+			;;
+		--nested_script)
+			nested_script="$val"
 			;;
 		esac
 	done
@@ -836,6 +843,30 @@ WRAPPER_EOF
 			echo "Created wrapper script: bin/${binary_name}.wrapper -> ../${rel_binary}"
 			echo "  (wrapper resolves absolute path first, then uses relative path)"
 
+			# 默認 exec 目標：原 wrapper
+			local exec_target="${binary_name}.wrapper"
+
+			# === 嵌套腳本支持 ===
+			# 開啟條件：--nested_script=<文件名>，腳本位於工程根目錄 ${project_root}/<文件名>
+			# 啟用後：command 與 desktop Exec 均指向嵌套腳本（bin/ 相對路徑），
+			#         腳本內約定變量 ${wrapper} 替換為同目錄 wrapper 文件名
+			if [ -n "${nested_script}" ]; then
+				local nested_src="${project_root}/${nested_script}"
+				if [ ! -f "${nested_src}" ]; then
+					echo "[警告] 嵌套腳本不存在: ${nested_src}，回退到原 wrapper: ${exec_target}" >&2
+				else
+					cp -f "${nested_src}" "${binary_dir}/bin/${nested_script}"
+					if grep -q '\${wrapper}' "${binary_dir}/bin/${nested_script}"; then
+						sed -i "s|\${wrapper}|${binary_name}.wrapper|g" "${binary_dir}/bin/${nested_script}"
+						chmod +x "${binary_dir}/bin/${nested_script}"
+						exec_target="${nested_script}"
+						echo "嵌套腳本已啟用，exec 目標改為 bin/${nested_script}"
+					else
+						echo "[警告] 嵌套腳本中未找到 \${wrapper} 變量，回退到原 wrapper: ${exec_target}" >&2
+					fi
+				fi
+			fi
+
 			# 更新 linglong.yaml 的 command 字段
 			# 将 command 设置为 wrapper 脚本路径（数组格式，ll-builder 要求）
 			if [ -f "${build_tmp_dir}/linglong.yaml" ]; then
@@ -844,8 +875,8 @@ WRAPPER_EOF
 				# 2. 替换 command 行
 				sed -i "s|^\s*command:.*|command:|" "${build_tmp_dir}/linglong.yaml"
 				# 3. 在 command 行后追加列表项（YAML 数组格式）
-				sed -i '/^\s*command:/a\  - '"${binary_name}"'.wrapper' "${build_tmp_dir}/linglong.yaml"
-				echo "Updated linglong.yaml command to array format: [${binary_name}.wrapper]"
+				sed -i "/^\s*command:/a\  - ${exec_target}" "${build_tmp_dir}/linglong.yaml"
+				echo "Updated linglong.yaml command to array format: [${exec_target}]"
 			fi
 
 			# 更新 desktop 文件的 Exec= 字段
@@ -873,19 +904,16 @@ WRAPPER_EOF
 						exec_args=$(echo "${exec_value}" | awk '{$1=""; print $0}' | sed 's/^ //')
 
 						local do_replace=false
-						local target_wrapper=""
 
 						# 优先级1: Exec 行包含 binary_name → 直接替换
 						if [[ "${line}" == Exec=*${binary_name}* ]]; then
 							do_replace=true
-							target_wrapper="${binary_name}"
 						# 优先级2: binary_name 来自 CSV 原始配置且存在于 binary_dir，
 						#           exec_bin_name 也在 binary_dir 中 → 强制使用 binary_name.wrapper
 						elif [ "${binary_name_is_original}" = true ] && \
 						     find "${binary_dir}" -type f -name "${exec_bin_name}" 2>/dev/null | grep -q .; then
-							echo "  [Info] Desktop Exec '${exec_bin_name}' replaced with configured '${binary_name}.wrapper'"
+							echo "  [Info] Desktop Exec '${exec_bin_name}' replaced with configured '${exec_target}'"
 							do_replace=true
-							target_wrapper="${binary_name}"
 						fi
 
 						if [ "${do_replace}" = true ]; then
@@ -904,7 +932,7 @@ WRAPPER_EOF
 								done
 								exec_args="${filtered_args# }"
 							fi
-							new_exec="Exec=${target_wrapper}.wrapper"
+							new_exec="Exec=${exec_target}"
 							if [ -n "${exec_args}" ]; then
 								new_exec="${new_exec} ${exec_args}"
 							fi

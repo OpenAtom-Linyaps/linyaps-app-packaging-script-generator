@@ -77,6 +77,7 @@ JSON 結構分為 `main`（必填）和 `optional`（可選）兩個分組：
 | `linyaps_arch` | 目標架構 | ❌ | `x86_64` |
 | `output_dir` | 輸出目錄 | ❌ | `./output` |
 | `build_extra_args` | 額外構建參數，原樣追加到 `ll-builder build`（默認 `--skip-output-check`，覆寫時需自行包含） | ❌ | `--skip-output-check --skip-strip-symbols` |
+| `nested_script` | 嵌套腳本文件名（僅填文件名，路徑自動拼接為 `${project_root}/<文件名>`），空值關閉。開啟後 command 與 desktop Exec 指向嵌套腳本 | ❌ | `my_launcher.sh` |
 
 ## 工作流程
 
@@ -419,6 +420,41 @@ AppImage 版本使用特殊的 wrapper 機制，借鑒 ll-pica 的 AppRun 方案
 - AppRun 次之：借鑒 ll-pica 方案，直接使用 AppImage 自帶的 AppRun
 - Fallback 機制：當 AppRun 缺失時，從 desktop 文件解析 Exec 命令
 - `resolve_exec_command.sh` 作為元數據提取工具，同時也是 AppRun 缺失時的 fallback
+
+---
+
+## 嵌套腳本支持（Nested Script）
+
+某些 AppImage 應用需要以"嵌套腳本"方式啟動：最終入口不是 wrapper，而是用戶提供的嵌套 bash 腳本，腳本內通過約定變量 `${wrapper}` 代指 pak_linyaps 自動解析出的 wrapper，形成 `command/desktop → 嵌套腳本 → wrapper → 實際入口` 的啟動鏈。
+
+### 使用方式
+
+- 將嵌套腳本放置於工程根目錄（與 `pak_linyaps.sh` 同級），腳本內使用 `${wrapper}` 代指 wrapper。
+- 開啟開關（僅填文件名，路徑自動拼接為 `${project_root}/<文件名>`）：
+
+```bash
+./pak_linyaps.sh ... --nested_script=my_launcher.sh
+```
+
+### 嵌套腳本示例
+
+```bash
+#!/bin/bash
+# my_launcher.sh - 由用戶提供，放在工程根目錄
+script_dir="$(cd "$(dirname "$0")" && pwd)"
+exec "${script_dir}/${wrapper}" "$@"
+```
+
+構建後 `${wrapper}` 會被替換為同目錄 wrapper 文件名（AppImage 為 `${APP_PREFIX}.wrapper`），並複製到 `${prefix}/bin/` 且賦予執行權限；linglong.yaml 的 `command` 與 desktop 的 `Exec=` 均指向該嵌套腳本。
+
+### 回退策略
+
+以下情況會告警並回退到原 wrapper（`command`/`Exec=` 仍指向 wrapper）：
+
+1. 嵌套腳本文件不存在。
+2. 腳本內未找到 `${wrapper}` 變量。
+
+開關未指定（`nested_script` 為空）時，行為完全不變。
 
 ---
 

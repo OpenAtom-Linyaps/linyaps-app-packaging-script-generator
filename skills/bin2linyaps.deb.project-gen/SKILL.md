@@ -519,6 +519,7 @@ with open('config/packages.csv', 'r') as f:
 | `--runtime_version` | 否 | 应用运行时版本（如 25.2.2） |
 | `--whitelist` | 否 | 白名单配置文件路径，未指定时按优先级自动查找（工程→skill→全局） |
 | `--build_extra_args` | 否 | 额外构建参数，原样追加到 `ll-builder build`（默认 `--skip-output-check`，覆盖时需自行包含，如 `--skip-output-check --skip-strip-symbols`） |
+| `--nested_script` | 否 | 嵌套脚本文件名（仅填文件名，路径自动拼接为 `${project_root}/<文件名>`），空值关闭。开启后 command 与 desktop Exec 指向嵌套脚本 |
 
 **注意：**
 - `${command}` 在模板中为占位符，实际值由 `pak_linyaps.sh` 在构建时通过 wrapper 机制动态设置
@@ -552,6 +553,39 @@ exec "${script_dir}/../uTools/utools" "$@"
 1. **路径解析问题**：许多应用使用 `dirname $0` 来定位资源文件，软链会导致路径解析错误
 2. **相对路径支持**：wrapper 通过 `cd + pwd` 解析绝对路径，确保 `$PATH` 执行时也能正确工作
 3. **自动化处理**：无需手动修改 desktop 文件和 linglong.yaml，减少错误
+
+## 嵌套脚本支持（Nested Script）
+
+某些应用需要以"嵌套脚本"方式启动：最终入口不是 wrapper，而是用户提供的嵌套 bash 脚本，脚本内通过约定变量 `${wrapper}` 代指 pak_linyaps 自动解析出的 wrapper，形成 `command/desktop → 嵌套脚本 → wrapper → 实际二进制` 的启动链。
+
+### 使用方式
+
+- 将嵌套脚本放置于工程根目录（与 `pak_linyaps.sh` 同级），脚本内使用 `${wrapper}` 代指 wrapper。
+- 开启开关（仅填文件名，路径自动拼接为 `${project_root}/<文件名>`）：
+
+```bash
+./pak_linyaps.sh ... --nested_script=my_launcher.sh
+```
+
+### 嵌套脚本示例
+
+```bash
+#!/bin/bash
+# my_launcher.sh - 由用户提供，放在工程根目录
+script_dir="$(cd "$(dirname "$0")" && pwd)"
+exec "${script_dir}/${wrapper}" "$@"
+```
+
+构建后 `${wrapper}` 会被替换为同目录 wrapper 文件名（deb 为 `${binary_name}.wrapper`），并复制到 `${prefix}/bin/` 且赋予执行权限；linglong.yaml 的 `command` 与 desktop 的 `Exec=` 均指向该嵌套脚本。
+
+### 回退策略
+
+以下情况会告警并回退到原 wrapper（`command`/`Exec=` 仍指向 wrapper）：
+
+1. 嵌套脚本文件不存在。
+2. 脚本内未找到 `${wrapper}` 变量。
+
+开关未指定（`nested_script` 为空）时，行为完全不变。
 
 ### ⚠️ Agent 注意事项
 
