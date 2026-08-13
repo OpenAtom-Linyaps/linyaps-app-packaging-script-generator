@@ -269,6 +269,22 @@ org.deepin.base/25.2.2	-	純 base 應用
 
 ### 3. 生成 pak_linyaps.sh
 
+从 `templates/pak_linyaps.sh` **完整复制**（不得手写、简化或删除任何函数/脚本调用）。生成后必须写入 `ll_id`，否则构建时会因 `ll_id` 为空而失败：
+
+```bash
+# 拷贝规范模板
+cp "${skill_root}/templates/pak_linyaps.sh" "${project_dir}/"
+chmod +x "${project_dir}/pak_linyaps.sh"
+
+# ⚠️ 关键：将模板中的 ll_id="" 替换为实际包名（新版本 pak_linyaps 通过该变量 envsubst 生成 linglong.yaml 的 id）
+sed -i 's/^[[:space:]]*ll_id=""/ll_id="'"${package_id}"'"/' "${project_dir}/pak_linyaps.sh"
+```
+
+> **重要：**
+> - `ll_id` 由 `--package_id`（主入口）/ `--ll_id`（覆盖）统一管理，`init_global_data()` 中缺省回退 `ll_id="${package_id}"`。
+> - 生成的 `pak_linyaps.sh` 中 `ll_id` **必须非空**；请将模板默认的 `ll_id=""` 替换为实际包名，或确保调用时传入 `--package_id=<id>`。
+> - `templates/linglong.yaml` 的 `package.id` 必须保留为 `${ll_id}` **变量**（不得硬编码为绝对包名），由 `pak_linyaps.sh` 在构建时 `envsubst` 替换。
+
 参考 `CI_ll_com.visualstudio.code/pak_linyaps.sh` 模板：
 
 ```bash
@@ -509,6 +525,8 @@ with open('config/packages.csv', 'r') as f:
 |-----|------|------|
 | `--src_path` | 是 | deb包完整路径 |
 | `--output_dir` | 是 | 输出目录 |
+| `--package_id` | 二选一 | 玲珑包 ID（反向域名格式），ll_id 的主要入口 |
+| `--ll_id` | 二选一 | 玲珑包 ID（反向域名格式），可覆盖 `--package_id` |
 | `--ll_version` | 二选一 | 玲珑格式版本 (x.x.x.x) |
 | `--origin_version` | 二选一 | 原始版本号（自动转换为玲珑格式） |
 | `--linyaps_arch` | 否 | 目标架构 (x86_64/arm64)，默认当前系统架构 |

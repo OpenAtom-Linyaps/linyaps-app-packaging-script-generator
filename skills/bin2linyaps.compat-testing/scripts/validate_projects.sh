@@ -49,7 +49,9 @@ bin2linyaps.compat-testing 前置检测脚本
 检查项:
   - 项目目录存在（CI_ll_<pkgName> / <pkgName> / 模糊匹配）
   - pak_linyaps.sh 存在且可执行
+  - pak_linyaps.sh 已指定有效的 ll_id（非空、非变量自引用、反向域名格式）
   - linglong.yaml 存在
+  - templates/linglong.yaml 的 package.id 必须是 \${ll_id} 变量（非绝对值）
   - templates/files_res/share/applications/*.desktop ≥ 1
   - templates/files_res/share/icons/hicolor/ 结构合规
 HELP
@@ -209,6 +211,45 @@ for pkg_name in "${ALL_PKG_NAMES[@]}"; do
         chmod +x "$project_dir/pak_linyaps.sh"
     fi
 
+    # 检查 pak_linyaps.sh 中的 ll_id 指定有效性（新版本 pak_linyaps 通过 ll_id 变量生成 linglong.yaml 的 id）
+    # ll_id 为空、为变量自引用、或格式非法时视为失败
+    ll_id_ok=1
+    ll_id_val=""
+    ll_id_line=""
+    ll_id_line=$(grep -E '^[[:space:]]*ll_id=' "$project_dir/pak_linyaps.sh" 2>/dev/null | head -1 || true)
+    if [[ -n "$ll_id_line" ]]; then
+        ll_id_val=$(echo "$ll_id_line" | sed 's/.*ll_id=//; s/^"//; s/"$//')
+    fi
+    if [[ -z "$ll_id_val" || "$ll_id_val" =~ ^\$\{?ll_id\}?$ ]]; then
+        ll_id_ok=0
+    elif [[ ! "$ll_id_val" =~ ^[a-z][a-z0-9]*(\.[a-z][a-z0-9]*)+$ ]]; then
+        log_warn "pak_linyaps.sh 中 ll_id='$ll_id_val' 格式可能不正确（期望反向域名格式如 com.example.app）"
+    fi
+    if [[ $ll_id_ok -eq 0 ]]; then
+        STATUSES+=("FAIL")
+        DIRS+=("$project_dir")
+        MESSAGES+=("pak_linyaps.sh 未指定有效的 ll_id（非空、非变量自引用）")
+        FAIL_COUNT=$((FAIL_COUNT + 1))
+        continue
+    fi
+
+    # 检查 templates/linglong.yaml 中 package.id 是否为 ${ll_id} 变量（而非绝对值）
+    # 若被硬编码为绝对包名，pak_linyaps envsubst 将无法替换，导致构建失败
+    tmpl_yaml="$project_dir/templates/linglong.yaml"
+    if [[ -f "$tmpl_yaml" ]]; then
+        id_line=""
+        id_line=$(grep -E '^[[:space:]]*id:' "$tmpl_yaml" 2>/dev/null | head -1 || true)
+        if [[ -n "$id_line" ]] && [[ "$id_line" != *'${ll_id}'* ]]; then
+            STATUSES+=("FAIL")
+            DIRS+=("$project_dir")
+            MESSAGES+=("templates/linglong.yaml 的 package.id 必须是 \${ll_id} 变量（当前: $(echo "$id_line" | tr -d '[:space:]')）")
+            FAIL_COUNT=$((FAIL_COUNT + 1))
+            continue
+        fi
+    else
+        log_warn "未找到 templates/linglong.yaml，跳过 id 变量检查 (非致命)"
+    fi
+
     # 检查 linglong.yaml
     if [[ ! -f "$project_dir/linglong.yaml" ]]; then
         STATUSES+=("FAIL")
@@ -233,8 +274,8 @@ for pkg_name in "${ALL_PKG_NAMES[@]}"; do
     fi
 
     # 检查图标目录结构
-    local icons_dir="$project_dir/templates/files_res/share/icons/hicolor"
-    local icon_status
+    icons_dir="$project_dir/templates/files_res/share/icons/hicolor"
+    icon_status=""
     icon_status=$(check_icon_structure "$icons_dir")
     if [[ "$icon_status" != "ok" ]]; then
         log_warn "图标目录检查: $pkg_name — $icon_status (非致命)"

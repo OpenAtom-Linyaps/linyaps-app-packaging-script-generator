@@ -389,6 +389,10 @@ generate_pak_linyaps() {
     cp "$template_file" "$output_file"
     chmod +x "$output_file"
 
+    # 写入 ll_id（新版本 pak_linyaps 通过变量生成 linglong.yaml 的 id）
+    # 将模板中的 ll_id="" 替换为实际包名，避免构建时因 ll_id 为空而失败
+    sed -i 's/^[[:space:]]*ll_id=""/ll_id="'"${pkg_name}"'"/' "$output_file"
+
     log_info "已生成: $output_file"
 }
 
