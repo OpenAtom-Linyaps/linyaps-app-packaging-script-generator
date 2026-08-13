@@ -218,7 +218,7 @@ normalize_dirname() {
 			local hash
 			hash=$(echo -n "${normalized_name}" | md5sum | cut -c1-8)
 			# 替换所有非ASCII字符为下划线（使用更兼容的方式）
-			normalized_name=$(echo "${normalized_name}" | sed 's/[^ -~]/_/g')
+			normalized_name=$(echo "${normalized_name}" | LC_ALL=C sed 's/[^ -~]/_/g')
 			# 在末尾添加哈希值
 			normalized_name="${normalized_name}_${hash}"
 		fi
@@ -298,7 +298,7 @@ normalize_filename() {
 			local hash
 			hash=$(echo -n "${normalized_name}" | md5sum | cut -c1-8)
 			# 替换所有非ASCII字符为下划线
-			normalized_name=$(echo "${normalized_name}" | sed 's/[^ -~]/_/g')
+			normalized_name=$(echo "${normalized_name}" | LC_ALL=C sed 's/[^ -~]/_/g')
 			# 在末尾添加哈希值
 			normalized_name="${normalized_name}_${hash}"
 		fi
