@@ -4,16 +4,23 @@
 #
 # 功能：
 # 1. 扫描指定目录下的所有 .desktop 文件
-# 2. 提取每个文件的 Exec 命令（忽略路径和参数）
+# 2. 提取每个文件的 Exec 命令（完整 Exec 值，仅 trim 首尾空白）
 # 3. 按 Exec 命令分组，相同命令的文件只保留一份
-# 4. 支持跨目录去重（删除与参考目录重复的文件）
+# 4. 支持跨目录去重（依据参考目录 files_res/ 的 desktop 判定）
 # 5. 删除重复文件，输出去重报告
 #
 # 去重策略：
-# - 基于 Exec 命令进行去重（而非文件内容哈希）
-# - 例如：Exec=/usr/bin/app %F 和 Exec=app %U 会被识别为重复
-# - 保留第一个遇到的文件，删除后续重复文件
-# - 包含 NoDisplay=true 的 desktop 文件不参与去重（如 URL handler 等隐藏条目）
+# - 目录内去重基于「完整 Exec 值」进行去重（非文件内容哈希）
+#   - 同 binary 不同 args 不视为重复（保留）
+#   - Exec=/usr/bin/app 与 Exec=app 视为不同（保守不去重）
+#   - 例如：Exec=/usr/bin/app %F 和 Exec=/usr/bin/app %U 保留两份
+# - 跨目录去重（--reference-dir，target=binary, reference=files_res）：
+#   - files_res/ 无可见 desktop → 跳过跨目录去重，保留 binary/ 的 desktop
+#   - files_res/ 有可见 desktop 且其 exec binary 存在于 binary/ 或 files_res/
+#       → files_res/ 权威，删除 binary/ 全部非 NoDisplay=true 的 desktop
+#   - files_res/ 有可见 desktop 但 exec binary 两目录均缺失
+#       → 回退：保留 binary/ 的 desktop（不删除），采用 binary/ 的 Exec
+# - 包含 NoDisplay=true 的 desktop 文件不参与去重（如 URL handler 等隐藏条目），始终保留
 #
 # 用法：
 #   dedup_desktop_files.sh <target_dir> [--verbose]
@@ -21,14 +28,14 @@
 #
 # 参数：
 #   target_dir     - 目标目录路径（如 /project/files_res 或 /project/binary）
-#   --reference-dir - 可选，参考目录路径。指定后，删除 target_dir 中与 ref_dir Exec 命令重复的文件
+#   --reference-dir - 可选，参考目录路径。指定后，依据 ref_dir 的 desktop 判定是否删除 target_dir 的 desktop
 #   --verbose      - 可选，显示详细日志
 #
 # 示例：
 #   # 单目录去重：删除 files_res 内部重复的 desktop 文件
 #   dedup_desktop_files.sh /project/files_res
 #
-#   # 跨目录去重：删除 binary 中与 files_res Exec 命令重复的 desktop 文件
+#   # 跨目录去重：依据 files_res/ 判定是否删除 binary/ 的 desktop 文件
 #   dedup_desktop_files.sh /project/binary --reference-dir /project/files_res
 
 set -e
@@ -72,14 +79,14 @@ usage() {
 	echo ""
 	echo "参数:"
 	echo "  target_dir      - 目标目录路径"
-	echo "  --reference-dir - 可选，参考目录路径。指定后删除 target_dir 中与 ref_dir 重复的文件"
+	echo "  --reference-dir - 可选，参考目录路径。指定后依据 ref_dir 判定是否删除 target_dir 中重复的文件"
 	echo "  --verbose       - 显示详细日志"
 	echo ""
 	echo "示例:"
 	echo "  # 单目录去重"
 	echo "  $0 /project/files_res"
 	echo ""
-	echo "  # 跨目录去重：删除 binary 中与 files_res 重复的文件"
+	echo "  # 跨目录去重：依据 files_res/ 判定是否删除 binary/ 的 desktop"
 	echo "  $0 /project/binary --reference-dir /project/files_res"
 }
 
@@ -145,9 +152,8 @@ is_nodisplay() {
 	return 1
 }
 
-# 提取 Exec 命令（忽略路径和参数）
-# 例如：Exec=/usr/bin/app %F -> app
-#       Exec=app %F -> app
+# 提取 Exec 命令（返回完整 Exec 值，仅 trim 首尾空白）
+# 不再移除路径或参数，以保证精确匹配（同 binary 不同 args 不去重）
 extract_exec_command() {
 	local desktop_file="$1"
 	local exec_line
@@ -163,13 +169,34 @@ extract_exec_command() {
 	# 提取 Exec= 后面的内容
 	local exec_value="${exec_line#Exec=}"
 
-	# 移除路径前缀（如 /usr/bin/）
-	exec_value="${exec_value##*/}"
-
-	# 移除参数（如 %F, %U 等）
-	exec_value=$(echo "${exec_value}" | awk '{print $1}')
+	# 仅 trim 首尾空白，保留完整值（路径与参数）
+	exec_value="${exec_value#"${exec_value%%[![:space:]]*}"}"
+	exec_value="${exec_value%"${exec_value##*[![:space:]]}"}"
 
 	echo "${exec_value}"
+}
+
+# 提取 exec 的二进制名（仅用于跨目录去重的 exec 存在性校验）
+# 例如：/usr/bin/app %F -> app
+# 处理带引号路径："/opt/My App/app" %U -> app
+get_exec_binary_name() {
+	local exec_value="$1"
+	local first_token
+
+	# 移除 env VAR=val 前缀（与 pak_linyaps 保持一致）
+	exec_value=$(echo "${exec_value}" | sed 's/^env \(\S*=\S*\s\)*//')
+	first_token=$(echo "${exec_value}" | awk '{print $1}')
+
+	if [ -z "${first_token}" ]; then
+		echo ""
+		return
+	fi
+
+	# 去除首尾引号（desktop 中 Exec 路径可能带双引号）
+	first_token="${first_token#\"}"
+	first_token="${first_token%\"}"
+
+	basename "${first_token}"
 }
 
 # 去重函数
@@ -208,7 +235,11 @@ dedup_desktop_files() {
 	# 数组：需要删除的文件
 	local -a files_to_delete
 
-	# 如果指定了参考目录，先加载参考目录中的 desktop 文件 Exec 命令
+	# 跨目录去重判定状态
+	local cross_dedup_active=false
+	local cross_authoritative=false
+
+	# 如果指定了参考目录，依据参考目录的 desktop 判定跨目录去重策略
 	if [ -n "${REFERENCE_DIR}" ]; then
 		local ref_apps_dir="${REFERENCE_DIR}/share/applications"
 		if [ -d "${ref_apps_dir}" ]; then
@@ -216,10 +247,12 @@ dedup_desktop_files() {
 			ref_desktop_files=$(find "${ref_apps_dir}" -maxdepth 1 -name "*.desktop" -type f 2>/dev/null || true)
 
 			if [ -n "${ref_desktop_files}" ]; then
-				log_info "加载参考目录 ${REFERENCE_DIR} 中的 desktop 文件 Exec 命令..."
+				log_info "分析参考目录 ${REFERENCE_DIR} 中的 desktop 文件..."
 				local -a ref_files_array
 				readarray -t ref_files_array <<<"${ref_desktop_files}"
 
+				local ref_visible_count=0
+				local ref_exec_binary=""
 				for ref_file in "${ref_files_array[@]}"; do
 					# 跳过 NoDisplay=true 的文件
 					if is_nodisplay "${ref_file}"; then
@@ -228,19 +261,35 @@ dedup_desktop_files() {
 						fi
 						continue
 					fi
-					local ref_exec
-					ref_exec=$(extract_exec_command "${ref_file}")
-					if [ -n "${ref_exec}" ]; then
-						exec_to_file[${ref_exec}]="${ref_file}"
-						if [ "${VERBOSE}" = "true" ]; then
-							log_info "  参考文件: $(basename "${ref_file}") -> Exec=${ref_exec}"
-						fi
+					ref_visible_count=$((ref_visible_count + 1))
+					if [ -z "${ref_exec_binary}" ]; then
+						local ref_exec
+						ref_exec=$(extract_exec_command "${ref_file}")
+						ref_exec_binary=$(get_exec_binary_name "${ref_exec}")
 					fi
 				done
-				log_info "已加载 ${#exec_to_file[@]} 个参考文件 Exec 命令"
+
+				if [ "${ref_visible_count}" -eq 0 ]; then
+					log_info "参考目录中无可用于去重的可见 desktop，跳过跨目录去重"
+				else
+					log_info "参考目录中存在 ${ref_visible_count} 个可见 desktop 文件"
+					cross_dedup_active=true
+
+					# 校验参考 desktop 的 exec binary 是否存在于 binary/ 或 files_res/
+					# 真实布局中 binary 可位于 opt/APP/app、usr/bin/app 等深度路径，故用足够大的 maxdepth
+					if [ -n "${ref_exec_binary}" ] && \
+						find "${TARGET_DIR}" "${REFERENCE_DIR}" -maxdepth 6 -type f -name "${ref_exec_binary}" 2>/dev/null | grep -q .; then
+						log_info "参考 desktop 的 exec binary (${ref_exec_binary}) 存在，files_res/ 作为权威来源"
+						cross_authoritative=true
+					else
+						log_warning "参考 desktop 的 exec binary (${ref_exec_binary}) 不存在于 binary/ 或 files_res/，回退保留 binary/ 的 desktop"
+					fi
+				fi
+			else
+				log_info "参考目录中无 desktop 文件，跳过跨目录去重"
 			fi
 		else
-			log_info "参考目录中不存在 applications 目录，跳过参考加载"
+			log_info "参考目录中不存在 applications 目录，跳过参考分析"
 		fi
 	fi
 
@@ -252,6 +301,14 @@ dedup_desktop_files() {
 			if [ "${VERBOSE}" = "true" ]; then
 				log_info "跳过 (NoDisplay=true): $(basename "${desktop_file}")"
 			fi
+			continue
+		fi
+
+		# files_res/ 权威：删除 binary/ 全部非 NoDisplay desktop
+		if [ "${cross_dedup_active}" = true ] && [ "${cross_authoritative}" = true ]; then
+			files_to_delete+=("${desktop_file}")
+			STAT_DUPLICATE_FILES=$((STAT_DUPLICATE_FILES + 1))
+			log_warning "files_res/ 权威，删除 binary/ 中重复 desktop: $(basename "${desktop_file}")"
 			continue
 		fi
 
@@ -281,11 +338,7 @@ dedup_desktop_files() {
 			files_to_delete+=("${desktop_file}")
 			STAT_DUPLICATE_FILES=$((STAT_DUPLICATE_FILES + 1))
 			local existing_file="${exec_to_file[${exec_cmd}]}"
-			if [ -n "${REFERENCE_DIR}" ]; then
-				log_warning "发现与参考目录重复: $(basename "${desktop_file}") 与 $(basename "${existing_file}") Exec 命令相同 (${exec_cmd})"
-			else
-				log_warning "发现重复 Exec 命令: $(basename "${desktop_file}") 与 $(basename "${existing_file}") 相同 (${exec_cmd})"
-			fi
+			log_warning "发现重复 Exec 命令: $(basename "${desktop_file}") 与 $(basename "${existing_file}") 相同 (${exec_cmd})"
 			if [ "${VERBOSE}" = "true" ]; then
 				log_info "  将删除: $(basename "${desktop_file}")"
 			fi

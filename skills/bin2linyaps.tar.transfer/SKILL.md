@@ -491,7 +491,7 @@ exec "${script_dir}/${wrapper}" "$@"
 - `parse_build_config.sh`：JSON 配置解析腳本（解析 `build_config.json`，驗證必填欄位，輸出 `key=value` 格式）
 - `scan_executables.sh`：可執行檔掃描腳本（tar 版特有，用於無 desktop 時的自動偵測）
 - `handle_special_paths.sh`：雙模式綜合腳本（`--phase=paths` 路徑轉換：處理 `/usr/`、`/opt/` 等路徑層級剝離 + 特殊字符標準化 + 軟鏈修復；`--phase=libfix` 非標準 .so 軟鏈修復），與 deb 版共用
-- `dedup_desktop_files.sh`：Desktop 文件去重腳本（兩步去重：binary vs files_res + files_res 內部），與 deb 版共用
+- `dedup_desktop_files.sh`：Desktop 文件去重腳本（兩步去重：binary vs files_res + files_res 內部；完整 Exec 值精確匹配，跨目錄時 files_res/ 權威並做 exec 存在性回退，`NoDisplay=true` 始終保留），與 deb 版共用
 - `validate_bin_nesting.sh`：嵌套 bin/ 路徑驗證腳本，與 deb 版共用
 - `handle_special_paths.sh`（`--phase=libfix`）：非標準目錄及多架構子目錄 .so 軟鏈修復腳本，在 `lib/` 下為 ELF 共享庫創建相對路徑軟鏈接，並補全 SONAME 級軟鏈（如 `libtiff.so.5`）；原 `fix_nonstd_lib_symlinks.sh` 已合併進本階段
 

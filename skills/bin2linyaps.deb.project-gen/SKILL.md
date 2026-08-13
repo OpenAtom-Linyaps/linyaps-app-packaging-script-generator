@@ -749,7 +749,7 @@ build_pak() {
 
 | 脚本 | 作用 | 删除后果 |
 |------|------|---------|
-| `dedup_desktop_files.sh` | desktop 文件去重 | 重复文件进入最终包，可能导致冲突 |
+| `dedup_desktop_files.sh` | desktop 文件去重（完整 Exec 值精确匹配；跨目录时 `files_res/` 权威，exec 存在性校验，`NoDisplay=true` 始终保留） | 重复文件进入最终包，可能导致冲突 |
 | `validate_bin_nesting.sh` | bin 目录嵌套验证 | 嵌套路径问题导致启动失败 |
 | `handle_special_paths.sh` | 特殊路径处理 + .so 软链修复（双模式） | 非 `/usr` 路径文件丢失 / 非 lib/ 目录的 ELF 库无法被 ldconfig 加载 |
 

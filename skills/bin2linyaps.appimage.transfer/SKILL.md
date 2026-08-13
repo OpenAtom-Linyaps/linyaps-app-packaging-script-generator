@@ -503,7 +503,7 @@ exec "${script_dir}/${wrapper}" "$@"
 - `resolve_exec_command.sh`：Exec 命令解析腳本（從 desktop 文件提取）
 - `parse_appimage_metadata.sh`：元數據提取腳本（從 AppImage 和 desktop 文件提取）
 - `parse_build_config.sh`：JSON 配置解析腳本（解析 `build_config.json`，驗證必填欄位，輸出 `key=value` 格式）
-- `dedup_desktop_files.sh`：Desktop 文件去重腳本（兩步去重：binary vs files_res + files_res 內部）
+- `dedup_desktop_files.sh`：Desktop 文件去重腳本（兩步去重：binary vs files_res + files_res 內部；完整 Exec 值精確匹配，跨目錄時 files_res/ 權威並做 exec 存在性回退，`NoDisplay=true` 始終保留）
 - `validate_bin_nesting.sh`：嵌套 bin/ 路徑驗證腳本
 - `handle_special_paths.sh`（`--phase=libfix`）：非標準目錄及多架構子目錄 .so 軟鏈修復腳本，在 `lib/` 下為 ELF 共享庫創建相對路徑軟鏈接，並補全 SONAME 級軟鏈（如 `libtiff.so.5`）；原 `fix_nonstd_lib_symlinks.sh` 已合併進本階段
 
