@@ -20,7 +20,7 @@ TESTS_FAILED=0
 # 测试目录
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
-DEDUP_SCRIPT="${PROJECT_ROOT}/templates/scripts/dedup_desktop_files.sh"
+DEDUP_SCRIPT="${PROJECT_ROOT}/scripts/dedup_desktop_files.sh"
 
 # 测试用临时目录
 TEST_TMP_DIR=""

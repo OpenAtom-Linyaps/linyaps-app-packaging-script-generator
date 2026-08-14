@@ -405,7 +405,7 @@ ls bins/
 
 > 注：原独立的 `fix_nonstd_lib_symlinks.sh` 逻辑已合并进本综合脚本的 `libfix` 阶段。
 
-**位置**：各 skill 的 `scripts/` 目录下各自维护一份（deb 规范源位于 `templates/scripts/`）
+**位置**：各 skill 的 `scripts/` 目录下各自维护一份（规范源位于 `scripts/`，由 `scripts/sync_scripts.sh` 同步）
 
 **用法**：
 ```bash

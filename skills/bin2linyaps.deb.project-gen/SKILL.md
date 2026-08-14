@@ -76,15 +76,19 @@ mkdir -p "${project_dir}/templates/files_res"
 mkdir -p "${project_dir}/scripts"
 mkdir -p "${project_dir}/config"
 
-# 拷贝辅助脚本（handle_special_paths.sh 规范源位于 templates/scripts/，为双模式综合脚本）
-cp "templates/scripts/handle_special_paths.sh" "${project_dir}/scripts/"
+# 拷贝辅助脚本（handle_special_paths.sh 规范源位于 scripts/，为双模式综合脚本）
+cp "scripts/handle_special_paths.sh" "${project_dir}/scripts/"
 chmod +x "${project_dir}/scripts/handle_special_paths.sh"
+cp "scripts/dedup_desktop_files.sh" "${project_dir}/scripts/"
+chmod +x "${project_dir}/scripts/dedup_desktop_files.sh"
+cp "scripts/validate_bin_nesting.sh" "${project_dir}/scripts/"
+chmod +x "${project_dir}/scripts/validate_bin_nesting.sh"
 cp "scripts/download_missing_deps.sh" "${project_dir}/scripts/"
 chmod +x "${project_dir}/scripts/download_missing_deps.sh"
 
 # 拷贝入口脚本分析器（用于检测使用 $1/$2 的风险脚本）
-if [ -f "templates/scripts/analyze_entry_script.sh" ]; then
-  cp "templates/scripts/analyze_entry_script.sh" "${project_dir}/scripts/"
+if [ -f "scripts/analyze_entry_script.sh" ]; then
+  cp "scripts/analyze_entry_script.sh" "${project_dir}/scripts/"
   chmod +x "${project_dir}/scripts/analyze_entry_script.sh"
 fi
 

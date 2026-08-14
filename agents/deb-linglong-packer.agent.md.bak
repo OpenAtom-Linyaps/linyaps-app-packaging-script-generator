@@ -84,7 +84,7 @@ permission:
   - 不得简化 wrapper 生成逻辑
 
 - **REQUIRE** 工程目录必须包含 `scripts/handle_special_paths.sh`
-  - 从 `skills/bin2linyaps.deb.project-gen/templates/scripts/handle_special_paths.sh` 拷贝
+  - 从 `skills/bin2linyaps.deb.project-gen/scripts/handle_special_paths.sh` 拷贝
   - 与 deb 版共用同一脚本，处理 `/usr/`、`/opt/` 等路径层级剥离
 
 ## 默认设定

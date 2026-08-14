@@ -7,7 +7,7 @@ set -e
 
 PROJECT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 DEB_FILE="${PROJECT_ROOT}/examples/com.zjd.gov_2.31.0.4_amd64.deb"
-HANDLE_SCRIPT="${PROJECT_ROOT}/skills/bin2linyaps.deb.project-gen/templates/scripts/handle_special_paths.sh"
+HANDLE_SCRIPT="${PROJECT_ROOT}/skills/bin2linyaps.deb.project-gen/scripts/handle_special_paths.sh"
 CACHE_DIR="${PROJECT_ROOT}/.cache/test_linyaps"
 EXTRACT_DIR="${CACHE_DIR}/extracted"
 OUTPUT_DIR="${CACHE_DIR}/output"

@@ -28,7 +28,7 @@ TESTS_SKIPPED=0
 # 测试目录
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
-HANDLE_SCRIPT="${PROJECT_ROOT}/templates/scripts/handle_special_paths.sh"
+HANDLE_SCRIPT="${PROJECT_ROOT}/scripts/handle_special_paths.sh"
 # 仓库根目录下 examples/ 中的真实 deb 用例
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
 DEB_FILE="${REPO_ROOT}/examples/ppthelper-agent_1.0.8_amd64.deb"
