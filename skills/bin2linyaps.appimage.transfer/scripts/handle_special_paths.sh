@@ -154,7 +154,10 @@ parse_args() {
 }
 
 # 标准化目录名
-# 将空格、逗号、括号、&、@、#、$ 等特殊字符和中文替换为安全字符
+# 将空格、逗号、括号、&、@、#、$ 等会破坏 shell 解析的特殊字符替换为安全字符
+# 非 ASCII 字符（中文等）原样保留：它们在文件系统与双引号 bash 字符串中均合法，
+# 无需改名为 ASCII（改名会丢失原始文件名语义）。若需嵌入 bash 脚本，由
+# pak_linyaps.sh 的 shell_escape() 负责转义。
 normalize_dirname() {
 	local original_name="$1"
 	local normalized_name="${original_name}"
@@ -187,11 +190,6 @@ normalize_dirname() {
 		needs_normalization=true
 	fi
 
-	# 检查是否包含非ASCII字符（中文等）- 使用更可靠的方式检测
-	if [[ "${normalized_name}" == *[![:ascii:]]* ]]; then
-		needs_normalization=true
-	fi
-
 	if [ "${needs_normalization}" = "true" ]; then
 		# 执行标准化
 		# 1. 空格替换为下划线
@@ -211,18 +209,6 @@ normalize_dirname() {
 			normalized_name="_${normalized_name:1}"
 		fi
 
-		# 6. 中文处理：替换为哈希值
-		# 检测非ASCII字符并替换为哈希值
-		if [[ "${normalized_name}" == *[![:ascii:]]* ]]; then
-			# 计算哈希值（使用MD5的前8位）
-			local hash
-			hash=$(echo -n "${normalized_name}" | md5sum | cut -c1-8)
-			# 替换所有非ASCII字符为下划线（使用更兼容的方式）
-			normalized_name=$(echo "${normalized_name}" | LC_ALL=C sed 's/[^ -~]/_/g')
-			# 在末尾添加哈希值
-			normalized_name="${normalized_name}_${hash}"
-		fi
-
 		# 清理连续下划线
 		normalized_name=$(echo "${normalized_name}" | sed 's/__*/_/g')
 
@@ -235,7 +221,7 @@ normalize_dirname() {
 	echo "${normalized_name}"
 }
 
-# 标准化文件名（与目录名使用相同的逻辑）
+# 标准化文件名（与目录名使用相同的逻辑；非 ASCII 字符原样保留）
 normalize_filename() {
 	local original_name="$1"
 	local normalized_name="${original_name}"
@@ -268,11 +254,6 @@ normalize_filename() {
 		needs_normalization=true
 	fi
 
-	# 检查是否包含非ASCII字符（中文等）
-	if [[ "${normalized_name}" == *[![:ascii:]]* ]]; then
-		needs_normalization=true
-	fi
-
 	if [ "${needs_normalization}" = "true" ]; then
 		# 执行标准化
 		# 1. 空格替换为下划线
@@ -290,17 +271,6 @@ normalize_filename() {
 		# 5. 连字符处理：文件名以 - 开头时替换为 _
 		if [[ "${normalized_name}" =~ ^- ]]; then
 			normalized_name="_${normalized_name:1}"
-		fi
-
-		# 6. 中文处理：替换为哈希值
-		if [[ "${normalized_name}" == *[![:ascii:]]* ]]; then
-			# 计算哈希值（使用MD5的前8位）
-			local hash
-			hash=$(echo -n "${normalized_name}" | md5sum | cut -c1-8)
-			# 替换所有非ASCII字符为下划线
-			normalized_name=$(echo "${normalized_name}" | LC_ALL=C sed 's/[^ -~]/_/g')
-			# 在末尾添加哈希值
-			normalized_name="${normalized_name}_${hash}"
 		fi
 
 		# 清理连续下划线
