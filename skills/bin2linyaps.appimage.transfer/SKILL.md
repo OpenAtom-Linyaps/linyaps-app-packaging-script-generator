@@ -72,7 +72,7 @@ JSON 結構分為 `main`（必填）和 `optional`（可選）兩個分組：
 | `app_version` | 版本號 | ❌ | `1.0.0` |
 | `base_id` | base 層 ID | ❌ | `org.deepin.base` |
 | `base_version` | base 層版本 | ❌ | `25.2.2` |
-| `runtime_id` | runtime 層 ID | ❌ | `org.deepin.runtime.dtk` |
+| `runtime_id` | runtime 層 ID，傳空值 `--runtime_id=` 或 `--runtime_id=-` 可禁用 runtime（純 base 應用，禁用後 linglong.yaml 的 `runtime:` 字段會被刪除） | ❌ | `org.deepin.runtime.dtk` |
 | `runtime_version` | runtime 層版本 | ❌ | `25.2.2` |
 | `linyaps_arch` | 目標架構 | ❌ | `x86_64` |
 | `output_dir` | 輸出目錄 | ❌ | `./output` |

@@ -533,7 +533,7 @@ with open('config/packages.csv', 'r') as f:
 | `--build_tmp_dir` | 否 | 构建缓存目录，未指定时使用临时目录 |
 | `--base_id` | 否 | 基础运行时ID（如 org.deepin.base），默认使用白名单中推荐的组合 |
 | `--base_version` | 否 | 基础运行时版本（如 25.2.2） |
-| `--runtime_id` | 否 | 应用运行时ID（如 org.deepin.runtime.dtk） |
+| `--runtime_id` | 否 | 应用运行时ID（如 org.deepin.runtime.dtk）。**传空值 `--runtime_id=` 或 `--runtime_id=-` 可禁用 runtime**（纯 base 应用），禁用后 linglong.yaml 的 `runtime:` 字段会被删除 |
 | `--runtime_version` | 否 | 应用运行时版本（如 25.2.2） |
 | `--whitelist` | 否 | 白名单配置文件路径，未指定时按优先级自动查找（工程→skill→全局） |
 | `--build_extra_args` | 否 | 额外构建参数，原样追加到 `ll-builder build`（默认 `--skip-output-check`，覆盖时需自行包含，如 `--skip-output-check --skip-strip-symbols`） |
@@ -846,8 +846,13 @@ sed -i "s|^\s*command:.*|command:|" "${build_tmp_dir}/linglong.yaml"
 sed -i '/^\s*command:/a\  - '"${binary_name}"'.wrapper' "${build_tmp_dir}/linglong.yaml"
 
 # 正确6：wrapper 创建后动态注入 base/runtime
+# runtime 启用时注入 runtime 字段；禁用时（--runtime_id= 或 --runtime_id=-）删除 runtime 字段
 sed -i "s|^\s*base:.*|base: ${base_id}/${base_version}|" "${build_tmp_dir}/linglong.yaml"
-sed -i "s|^\s*runtime:.*|runtime: ${runtime_id}/${runtime_version}|" "${build_tmp_dir}/linglong.yaml"
+if [ "${runtime_disabled}" -eq 0 ]; then
+  sed -i "s|^\s*runtime:.*|runtime: ${runtime_id}/${runtime_version}|" "${build_tmp_dir}/linglong.yaml"
+else
+  sed -i "/^\s*runtime:/d" "${build_tmp_dir}/linglong.yaml"
+fi
 ```
 
 ### 3. 生成后自检清单
@@ -939,8 +944,13 @@ export linyaps_arch=${linyaps_arch}
 cat "${project_root}/templates/linglong.yaml" | envsubst >"${build_tmp_dir}/linglong.yaml"
 
 # 在 build_pak() 中，wrapper 创建后通过 sed 注入 base/runtime
+# runtime 启用时注入；禁用时（--runtime_id= 或 --runtime_id=-）删除 runtime 字段
 sed -i "s|^\s*base:.*|base: ${base_id}/${base_version}|" "${build_tmp_dir}/linglong.yaml"
-sed -i "s|^\s*runtime:.*|runtime: ${runtime_id}/${runtime_version}|" "${build_tmp_dir}/linglong.yaml"
+if [ "${runtime_disabled}" -eq 0 ]; then
+  sed -i "s|^\s*runtime:.*|runtime: ${runtime_id}/${runtime_version}|" "${build_tmp_dir}/linglong.yaml"
+else
+  sed -i "/^\s*runtime:/d" "${build_tmp_dir}/linglong.yaml"
+fi
 ```
 
 **原因：**

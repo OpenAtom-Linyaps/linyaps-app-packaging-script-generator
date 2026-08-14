@@ -3,7 +3,7 @@
 set -x
 
 srcType="deb"
-templateVer="2026.8.13.2"
+templateVer="2026.8.14.1"
 
 # 默認 base/runtime 配置（可通過命令行參數覆蓋）
 DEFAULT_BASE_ID="org.deepin.base"
@@ -115,6 +115,16 @@ init_global_data() {
 		esac
 	done
 
+	# 支持禁用 runtime：--runtime_id= 為空 或 值為 "-" 時禁用 runtime
+	# 禁用後會同步刪除 linglong.yaml 中的 runtime 字段
+	if [ -z "${runtime_id}" ] || [ "${runtime_id}" = "-" ]; then
+		runtime_id=""
+		runtime_version=""
+		runtime_disabled=1
+	else
+		runtime_disabled=0
+	fi
+
 	# 統一管理 ll_id：由 --package_id / --ll_id 指定
 	# --package_id 為主要入口（與模板 yaml 的 ${package_id} 對應），--ll_id 可覆蓋
 	if [ -z "${ll_id}" ]; then
@@ -165,12 +175,17 @@ validate_base_runtime() {
 	local has_warning=0
 
 	# 定義需要驗證的字段：名稱、值、ID正則、描述
+	# runtime 禁用時（runtime_disabled=1）僅驗證 base，不驗證 runtime
 	local fields=(
 		"base_id:${base_id}:org[0-9a-z]*\\.[0-9a-z][0-9a-z.]*:基礎運行時ID"
 		"base_version:${base_version}:版本號:基礎運行時版本"
-		"runtime_id:${runtime_id}:org[0-9a-z]*\\.[0-9a-z][0-9a-z.]*:應用運行時ID"
-		"runtime_version:${runtime_version}:版本號:應用運行時版本"
 	)
+	if [ "${runtime_disabled}" -eq 0 ]; then
+		fields+=(
+			"runtime_id:${runtime_id}:org[0-9a-z]*\\.[0-9a-z][0-9a-z.]*:應用運行時ID"
+			"runtime_version:${runtime_version}:版本號:應用運行時版本"
+		)
+	fi
 
 	for field_def in "${fields[@]}"; do
 		IFS=':' read -r field_name field_value _ field_desc <<<"${field_def}"
@@ -256,7 +271,11 @@ validate_base_runtime() {
 
 	echo "base/runtime 配置驗證通過"
 	echo "  base: ${base_id}/${base_version}"
-	echo "  runtime: ${runtime_id}/${runtime_version}"
+	if [ "${runtime_disabled}" -eq 0 ]; then
+		echo "  runtime: ${runtime_id}/${runtime_version}"
+	else
+		echo "  runtime: 已禁用（linglong.yaml 中的 runtime 字段將被刪除）"
+	fi
 }
 
 # 白名單驗證：檢查 base/runtime 組合是否為已知合規組合
@@ -357,11 +376,19 @@ validate_base_runtime_whitelist() {
 	done <"${wl_file}"
 
 	if [ "${found}" -eq 1 ]; then
-		echo "白名單驗證通過: ${base_id}/${base_version} + ${runtime_id}/${runtime_version}"
+		if [ "${runtime_disabled}" -eq 0 ]; then
+			echo "白名單驗證通過: ${base_id}/${base_version} + ${runtime_id}/${runtime_version}"
+		else
+			echo "白名單驗證通過: ${base_id}/${base_version} + 無 runtime（-）"
+		fi
 		return 0
 	else
 		echo "錯誤: base/runtime 組合不在白名單中，構建被阻止！" >&2
-		echo "  當前組合: ${base_id}/${base_version} + ${runtime_id}/${runtime_version}" >&2
+		if [ "${runtime_disabled}" -eq 0 ]; then
+			echo "  當前組合: ${base_id}/${base_version} + ${runtime_id}/${runtime_version}" >&2
+		else
+			echo "  當前組合: ${base_id}/${base_version} + 無 runtime（-）" >&2
+		fi
 		echo "  白名單中可用的組合：" >&2
 		# 列出白名單中所有有效條目
 		while IFS= read -r line || [ -n "${line}" ]; do
@@ -981,8 +1008,14 @@ WRAPPER_EOF
 	if [ -f "${build_tmp_dir}/linglong.yaml" ]; then
 		sed -i "s|^\s*base:.*|base: ${base_id}/${base_version}|" "${build_tmp_dir}/linglong.yaml"
 		echo "Updated linglong.yaml base: ${base_id}/${base_version}"
-		sed -i "s|^\s*runtime:.*|runtime: ${runtime_id}/${runtime_version}|" "${build_tmp_dir}/linglong.yaml"
-		echo "Updated linglong.yaml runtime: ${runtime_id}/${runtime_version}"
+		if [ "${runtime_disabled}" -eq 0 ]; then
+			sed -i "s|^\s*runtime:.*|runtime: ${runtime_id}/${runtime_version}|" "${build_tmp_dir}/linglong.yaml"
+			echo "Updated linglong.yaml runtime: ${runtime_id}/${runtime_version}"
+		else
+			# runtime 禁用：刪除 linglong.yaml 中的 runtime 字段
+			sed -i "/^\s*runtime:/d" "${build_tmp_dir}/linglong.yaml"
+			echo "runtime 已禁用，已刪除 linglong.yaml 中的 runtime 字段"
+		fi
 	fi
 
 	# 第一步去重：删除 binary/ 中与 files_res/ 内容重复的 desktop 文件
