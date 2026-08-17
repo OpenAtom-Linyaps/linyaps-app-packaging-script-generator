@@ -157,10 +157,22 @@ eval "$(bash "${skill_root}/scripts/parse_build_config.sh" build_config.json)"
 
 | 優先級 | 檢測條件 | wrapper 目標 | 說明 |
 |--------|---------|-------------|------|
-| 1 | `binary_name` 顯式聲明 | `lib/${APP_PREFIX}/${binary_name}` | 用戶指定，最高優先 |
+| 1 | `binary_name` 唯一命中可執行 | `lib/${APP_PREFIX}/<相對路徑>` | 在解壓目錄 find 唯一可執行文件，命中才採用 |
 | 2 | `AppRun` 存在 | `lib/${APP_PREFIX}/AppRun` | AppImage 標準入口，最可靠 |
 | 3 | `AppRun.wrapped` 存在 | `lib/${APP_PREFIX}/AppRun.wrapped` | 部分 AppImage 使用 wrapped 入口 |
 | 4 | Fallback | `lib/${APP_PREFIX}/${resolved_exec}` | 從 desktop Exec 解析 |
+
+**binary_name 定位**：調用 `resolve_binary_path.sh` 在解壓目錄中按 binary_name 查找唯一可執行文件：
+
+```bash
+# 在 squashfs-root 中按 binary_name 定位唯一可執行文件（-maxdepth 3 -type f）
+wrapper_target=$("${skill_root}/scripts/resolve_binary_path.sh" "${extract_dir}/squashfs-root" "${binary_name}")
+```
+
+**定位規則**：
+- `find -maxdepth 3 -type f -name "${binary_name}" -perm /+x` 搜索。
+- `-type f` 排除與 binary name 同名的 **bundle 目錄**（Electron 應用常見 `xyz.chatboxapp.app/` 目錄），避免誤判為可執行。
+- 唯一命中 → 採用其相對路徑；零個或多個 → 回退到 AppRun（第 2 級）。
 
 調用 `resolve_exec_command.sh` 從 desktop 文件中提取 Exec 命令（作為 fallback）：
 
@@ -370,7 +382,7 @@ main()
   │   ├─ extract_appimage.sh 解壓 AppImage
   │   ├─ 保持 squashfs-root 原始結構（lib/${APP_PREFIX}/）
   │   ├─ 入口優先策略（借鑒 ll-pica）
-  │   │   ├─ binary_name 顯式聲明 → wrapper_target="${binary_name}"
+  │   │   ├─ binary_name 定位唯一可執行（resolve_binary_path.sh）→ wrapper_target=相對路徑
   │   │   ├─ 檢測 AppRun 是否存在 → wrapper_target="AppRun"
   │   │   ├─ 檢測 AppRun.wrapped → wrapper_target="AppRun.wrapped"
   │   │   └─ Fallback: resolve_exec_command.sh 解析 desktop Exec
@@ -412,7 +424,7 @@ AppImage 版本使用特殊的 wrapper 機制，借鑒 ll-pica 的 AppRun 方案
 
 | 優先級 | 檢測條件 | wrapper 目標 | 說明 |
 |--------|---------|-------------|------|
-| 1 | `binary_name` 顯式聲明 | `lib/${APP_PREFIX}/${binary_name}` | 用戶指定，最高優先 |
+| 1 | `binary_name` 唯一命中可執行 | `lib/${APP_PREFIX}/<相對路徑>` | 解壓目錄 find 唯一可執行文件（`-maxdepth 3 -type f`） |
 | 2 | `AppRun` 存在 | `lib/${APP_PREFIX}/AppRun` | AppImage 標準入口，最可靠 |
 | 3 | `AppRun.wrapped` 存在 | `lib/${APP_PREFIX}/AppRun.wrapped` | 部分 AppImage 使用 wrapped 入口 |
 | 4 | Fallback | `lib/${APP_PREFIX}/${resolved_exec}` | 從 desktop Exec 解析 |
@@ -420,7 +432,7 @@ AppImage 版本使用特殊的 wrapper 機制，借鑒 ll-pica 的 AppRun 方案
 **設計原則**：
 - 保持 AppImage 原始目錄結構（squashfs-root）
 - 始終使用相對路徑 `exec`，不使用 `cd`（wrapper 設計原則）
-- binary_name 優先：用戶顯式聲明的入口優先於 AppRun 自動檢測
+- binary_name 優先：用 `resolve_binary_path.sh` 在解壓目錄中 find 唯一可執行文件（規避 bundle 目錄名同名誤判），唯一命中才採用
 - AppRun 次之：借鑒 ll-pica 方案，直接使用 AppImage 自帶的 AppRun
 - Fallback 機制：當 AppRun 缺失時，從 desktop 文件解析 Exec 命令
 - `resolve_exec_command.sh` 作為元數據提取工具，同時也是 AppRun 缺失時的 fallback

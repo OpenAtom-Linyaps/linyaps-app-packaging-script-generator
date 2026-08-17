@@ -585,26 +585,34 @@ build_pak() {
 	mkdir -p "${binary_dir}/bin"
 
 	# 入口優先策略（借鑒 ll-pica 方案）
-	# 優先級：binary_name 顯式聲明 > AppRun > AppRun.wrapped > resolve_exec_command.sh 解析 > 默認 AppRun
+	# 優先級：binary_name 定位唯一可執行 > AppRun > AppRun.wrapped > resolve_exec_command.sh 解析 > 默認 AppRun
 	# 原因：binary_name 是用戶顯式指定的入口，最高優先
 	#       AppRun 是 AppImage 的標準入口，最可靠
 	#       resolve_exec_command.sh 作為 fallback，防止 AppRun 缺失
 	local wrapper_target=""
 
 	# 1. 顯式指定的 binary_name（最高優先級）
+	#    在解壓目錄中按 binary_name find 唯一可執行文件（-maxdepth 3 -type f）
+	#    規避 bundle 目錄名與 binary name 同名導致的誤判；唯一命中才採用，否則回退
 	if [ -n "${binary_name}" ]; then
-		wrapper_target="${binary_name}"
-		echo "✓ 使用用戶指定的 binary_name: ${binary_name}"
-	# 2. 檢測 AppRun 是否存在
-	elif [ -f "${binary_dir}/lib/${app_prefix}/AppRun" ]; then
+		wrapper_target=$("${project_root}/scripts/resolve_binary_path.sh" "${binary_tmp_dir}/squashfs-root" "${binary_name}" 2>/dev/null || echo "")
+		if [ -n "${wrapper_target}" ]; then
+			echo "✓ 使用 binary_name 定位入口: ${wrapper_target}"
+		else
+			echo "[警告] binary_name 未唯一命中可執行文件，回退 AppRun 檢測" >&2
+		fi
+	fi
+
+	# 2. 檢測 AppRun 是否存在（binary_name 為空或定位失敗時）
+	if [ -z "${wrapper_target}" ] && [ -f "${binary_dir}/lib/${app_prefix}/AppRun" ]; then
 		wrapper_target="AppRun"
 		echo "✓ 檢測到 AppRun，使用 ll-pica wrapper 方案"
 	# 3. 檢測 AppRun.wrapped 是否存在
-	elif [ -f "${binary_dir}/lib/${app_prefix}/AppRun.wrapped" ]; then
+	elif [ -z "${wrapper_target}" ] && [ -f "${binary_dir}/lib/${app_prefix}/AppRun.wrapped" ]; then
 		wrapper_target="AppRun.wrapped"
 		echo "✓ 檢測到 AppRun.wrapped，使用 wrapped 入口"
 	# 4. Fallback：從 desktop 文件解析 Exec 命令
-	else
+	elif [ -z "${wrapper_target}" ]; then
 		echo "未檢測到 AppRun，嘗試從 desktop 文件解析..."
 		local resolved_exec=""
 		resolved_exec=$("${project_root}/scripts/resolve_exec_command.sh" "${binary_tmp_dir}/squashfs-root" 2>/dev/null || echo "")
