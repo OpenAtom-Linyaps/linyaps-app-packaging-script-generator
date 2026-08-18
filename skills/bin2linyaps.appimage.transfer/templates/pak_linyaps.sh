@@ -58,7 +58,6 @@ shell_escape() {
 
 # AppImage 專用參數
 src_path=""
-binary_name=""
 
 init_global_data() {
 	ARCH=$(uname -m)
@@ -70,6 +69,8 @@ init_global_data() {
 	linyaps_arch=""
 	output_dir=""
 	build_tmp_dir=""
+	# binary_name 唯一聲明點（此處在 CLI 解析之前重置，確保 --binary_name 參數優先）
+	binary_name=""
 
 	project_root="$(dirname "$(readlink -f "$0")")"
 	default_output_dir="${project_root}/bins"

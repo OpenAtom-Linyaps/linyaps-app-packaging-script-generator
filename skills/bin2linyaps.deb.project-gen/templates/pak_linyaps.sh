@@ -58,6 +58,8 @@ init_global_data() {
 	src_path=""
 	output_dir=""
 	build_tmp_dir=""
+	# binary_name 唯一聲明點（此處在 CLI 解析之前重置，確保 --binary_name 參數優先）
+	binary_name=""
 
 	project_root="$(dirname "$(readlink -f "$0")")"
 	default_output_dir="${project_root}/bins"
@@ -84,6 +86,9 @@ init_global_data() {
 			;;
 		--ll_id)
 			ll_id="$val"
+			;;
+		--binary_name)
+			binary_name="$val"
 			;;
 		--output_dir)
 			output_dir="$val"

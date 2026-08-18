@@ -296,6 +296,14 @@ cp "${skill_root}/templates/linglong.yaml" "${project_dir}/templates/"
 # ⚠️ 写入 ll_id：将模板默认的 ll_id="" 替换为实际包名（新版本 pak_linyaps 通过该变量 envsubst 生成 linglong.yaml 的 id）
 sed -i 's/^[[:space:]]*ll_id=""/ll_id="'"${package_id}"'"/' "${project_dir}/pak_linyaps.sh"
 
+# ⚠️ 写入 binary_name（仅当已解析到非空值时）：
+#    通过 sed 精确替换 init_global_data() 内唯一的 binary_name="" 声明行。
+#    该声明位于 CLI 解析循环之前，运行时 --binary_name 参数仍可覆盖它。
+#    binary_name 为空时保持模板默认 binary_name=""（wrapper 逻辑将回退 AppRun，属预期行为）。
+if [ -n "${binary_name}" ]; then
+	sed -i 's|^[[:space:]]*binary_name=""|binary_name="'"${binary_name}"'"|' "${project_dir}/pak_linyaps.sh"
+fi
+
 # 預填充已知值到模板 YAML（Step 2/3 已收集的靜態信息，避免佔位符殘留）
 # 注意：package.id 必须保持为 ${ll_id} 变量（由 pak_linyaps envsubst 替换），不要 sed 替换 ${ll_id}
 sed -i "s|\${package_id}|${package_id}|g" "${project_dir}/templates/linglong.yaml"
@@ -333,6 +341,7 @@ fi
 - `package_id` 從 `app_name` 推導（反向域名格式，如 `com.example.app`）
 - `command` 欄位占位符由 `pak_linyaps.sh` 在構建時自動處理
 - `base`/`runtime` 欄位為空佔位符 `""`，由 `build_pak()` 透過 `sed` 延遲注入
+- **🚫 禁止在 pak_linyaps.sh 顶部另插 binary_name=... 声明**：`binary_name` 必须通过上述 sed 精确替换 `init_global_data()` 内唯一的 `binary_name=""` 声明行。若在脚本顶部（`srcType`/`templateVer` 之后）再插一行 `binary_name=...`，会与模板默认值形成双重声明，后执行的默认值会覆盖注入值，导致 binary_name 为空、wrapper 逻辑误回退 AppRun（不符合 binary_name 优先设计）。
 - **禁止**在資源收集階段手動修改 desktop 文件的 `Exec=` 欄位
 
 ---

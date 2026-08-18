@@ -282,12 +282,21 @@ chmod +x "${project_dir}/pak_linyaps.sh"
 
 # ⚠️ 关键：将模板中的 ll_id="" 替换为实际包名（新版本 pak_linyaps 通过该变量 envsubst 生成 linglong.yaml 的 id）
 sed -i 's/^[[:space:]]*ll_id=""/ll_id="'"${package_id}"'"/' "${project_dir}/pak_linyaps.sh"
+
+# ⚠️ 写入 binary_name（仅当 CSV/配置已提供非空值时）：
+#    通过 sed 精确替换 init_global_data() 内唯一的 binary_name="" 声明行。
+#    该声明位于 CLI 解析循环之前，运行时 --binary_name 参数仍可覆盖它。
+#    binary_name 为空时保持模板默认 binary_name=""（build_pak 将自动从 desktop 文件提取兜底）。
+if [ -n "${binary_name}" ]; then
+	sed -i 's|^[[:space:]]*binary_name=""|binary_name="'"${binary_name}"'"|' "${project_dir}/pak_linyaps.sh"
+fi
 ```
 
 > **重要：**
 > - `ll_id` 由 `--package_id`（主入口）/ `--ll_id`（覆盖）统一管理，`init_global_data()` 中缺省回退 `ll_id="${package_id}"`。
 > - 生成的 `pak_linyaps.sh` 中 `ll_id` **必须非空**；请将模板默认的 `ll_id=""` 替换为实际包名，或确保调用时传入 `--package_id=<id>`。
 > - `templates/linglong.yaml` 的 `package.id` 必须保留为 `${ll_id}` **变量**（不得硬编码为绝对包名），由 `pak_linyaps.sh` 在构建时 `envsubst` 替换。
+> - **`binary_name` 定制能力**：`binary_name` 在 `init_global_data()` 内唯一声明，支持 `--binary_name=<name>` 运行时覆盖（优先级高于声明值）。声明值为空时，`build_pak()` 会自动从 desktop 文件的 Exec 字段提取兜底。**禁止**在 pak_linyaps.sh 顶部另插 `binary_name=...`，否则会与模板默认值双重声明、被后执行的默认值覆盖而失效。
 
 参考 `CI_ll_com.visualstudio.code/pak_linyaps.sh` 模板：
 

@@ -38,6 +38,19 @@ if [ ! -d "${search_root}" ]; then
     exit 1
 fi
 
+# binary_name 可能是相對路徑（如 usr/bin/shotcut）或文件名（如 shotcut）
+# 優先按相對路徑精確命中，未命中再回退按文件名（basename）搜索
+if [[ "${binary_name}" == */* ]]; then
+	candidate="${search_root}/${binary_name}"
+	if [ -f "${candidate}" ] && [ -x "${candidate}" ]; then
+		echo "${binary_name}"
+		exit 0
+	fi
+	# 相對路徑未命中，回退為文件名搜索
+	echo "提示: 相對路徑 '${binary_name}' 未命中可執行文件，回退按文件名 '$(basename "${binary_name}")' 搜索" >&2
+	binary_name="$(basename "${binary_name}")"
+fi
+
 # 查找可執行文件
 # - -maxdepth 3: 覆蓋 squashfs-root 根層 + bundle 目錄 + bundle/binary 層
 # - -type f: 排除同名目錄（Electron bundle 目錄）
