@@ -106,6 +106,7 @@ permission:
 - **兼容性测试为可选步骤**：仅当用户提示词包含"兼容测试"时才执行兼容性测试和缺失依赖修复；否则直接跳过
 - **ONLY** 处理deb包、tar归档包和AppImage应用到玲珑打包的转换工作
 - **WARNING** 若用户没有指定临时缓存目录，则默认所有临时缓存目录放置到当前工程目录而不是/tmp
+- **REQUIRE** 运行时依赖存在性校验：任意写入 `linglong.yaml` 的 `buildext.apt.depends` 的依赖（含 deb `Depends` 解析结果、`missing_deps` 的 `apt-file` 搜索结果），必须逐包通过 `apt-cache show` 核验存在于当前 apt 仓库（以 stdout 出现 `Package:` 为准）；不存在的包禁止写入，由 `bin2linyaps.deb.analyze` 统一执行（`scripts/depends.py`），Agent 编排在生成前兜底调用
 
 ### Desktop/Command 处理约束
 

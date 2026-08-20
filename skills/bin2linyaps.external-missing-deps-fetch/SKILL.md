@@ -20,6 +20,7 @@ user-invocable: false
 - **只修改 `<project_dir>/templates/linglong.yaml`**（含 envsubst 变量的源模板）
 - **绝不修改 `build_tmp_dir` 中的任何文件**（`pak_linyaps.sh` 通过 `envsubst` 从模板生成的瞬态副本）
 - `missing_deps.*` 由 `ll-builder build` 在 `build_tmp_dir` 中生成，脚本通过 `--build-tmp-dir` 参数读取
+- **写入门禁**：`apt-file` 搜索到的包名，在追加进 `buildext.apt.depends` 前必须逐包通过 `apt-cache show` 核验其存在于当前 apt 仓库（以 stdout 出现 `Package:` 为准）；不存在的包一律剔除，禁止写入 `depends`
 
 ## 触发场景
 
@@ -54,10 +55,11 @@ bash skills/bin2linyaps.external-missing-deps-fetch/scripts/fetch_missing_deps.s
 | 2 | 查找缺失依赖文件 | 优先 `--build-tmp-dir`，回退 `project_dir`；先 JSON 后 CSV |
 | 3 | 提取去重 so 文件名 | `jq -r` (JSON) / `awk -F,` (CSV) → `sort -u` |
 | 4 | apt-file 并行搜索包名 | `xargs -P $(nproc)` + `apt-file search -x` |
-| 5 | 更新 `<project_dir>/templates/linglong.yaml` | `ruamel.yaml` 追加 `buildext.apt.depends`，保留 envsubst 变量 |
-| 6 | 获取 deb 下载 URL | `apt-get download --print-uris` |
-| 7 | 生成 `missing_deps_urls.conf` | 生成到 `<project_dir>/` |
-| 8 | 输出摘要 | 包数、so 数、生成文件路径 |
+| 5 | **逐包核验 apt 仓库存在性** | 对 `apt-file` 结果逐包 `apt-cache show`，不存在的剔除 |
+| 6 | 更新 `<project_dir>/templates/linglong.yaml` | `ruamel.yaml` 追加 `buildext.apt.depends`，保留 envsubst 变量 |
+| 7 | 获取 deb 下载 URL | `apt-get download --print-uris` |
+| 8 | 生成 `missing_deps_urls.conf` | 生成到 `<project_dir>/` |
+| 9 | 输出摘要 | 包数、so 数、生成文件路径 |
 
 ## 输出产物
 
@@ -75,6 +77,7 @@ bash skills/bin2linyaps.external-missing-deps-fetch/scripts/fetch_missing_deps.s
 | 无 `missing_deps` 文件 | exit 0（info，非错误） |
 | `templates/linglong.yaml` 不存在 | exit 1，提示目标应为模板而非 build_tmp 副本 |
 | apt-file 搜索无结果 | warning 到 stderr，跳过该 so |
+| apt-file 命中但包不在当前 apt 仓库 | warning 到 stderr，剔除该包，不写入 depends |
 | 包名已存在于 depends | 自动去重，不重复写入 |
 | apt-get 获取 URL 失败 | warning 到 stderr，跳过该包 |
 | 没有 `buildext` 或 `apt` 字段 | 自动创建 |
@@ -87,6 +90,7 @@ bash skills/bin2linyaps.external-missing-deps-fetch/scripts/fetch_missing_deps.s
 | `awk` | 解析 missing_deps.csv | 回退方案 |
 | `xargs` | 并行 apt-file 搜索 | `-P $(nproc)` |
 | `apt-file` | so → 包名反向查找 | 需 `apt-file update` |
+| `apt-cache` | 逐包核验包存在性 | 写入门禁，stdout 出现 `Package:` 为准 |
 | `python3` + `ruamel.yaml` | 修改 linglong.yaml | 保留 YAML 格式和 envsubst 变量 |
 | `apt-get` | 获取 deb 下载 URL | `download --print-uris` |
 | `wget` | 下载 deb | 用于静态下载脚本 `download_missing_deps.sh` |
