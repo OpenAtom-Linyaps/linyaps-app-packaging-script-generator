@@ -300,19 +300,6 @@ python3 common-data-verify.py <files_res_dir> --json --output report.json
 
 **LLM Agent 在执行资源收集时必须遵守以下规则：**
 
-1. **禁止修改 Exec 字段**：desktop 文件的 Exec 字段由 `pak_linyaps.sh` 在构建时通过 wrapper 机制自动处理
-2. **禁止修改 command 字段**：linglong.yaml 的 command 字段由 `pak_linyaps.sh` 在构建时通过 wrapper 机制自动设置
-3. **只修复 Icon 路径**：将 Icon 的绝对路径改为相对路径
-4. **不要提前优化**：wrapper 机制需要原始的 Exec 路径来正确提取 binary_name
-
-**wrapper 机制工作流程**（由 `pak_linyaps.sh` 在构建时执行）：
-1. 从 desktop 文件自动提取 `binary_name`
-2. 在 `binary/` 目录下查找实际二进制文件
-3. 创建 wrapper 脚本（`bin/${binary_name}.wrapper`）
-4. 自动更新 `linglong.yaml` 的 `command` 字段为 wrapper 路径
-5. 自动更新 desktop 文件的 `Exec=` 字段为 wrapper 路径
-
-**提前修改 Exec 的后果**：
-- wrapper 机制无法正确提取 binary_name
-- 导致 wrapper 脚本创建失败
+1. **只修复 Icon 路径**：将 desktop 文件 Icon 的绝对路径改为相对路径
+2. **禁止修改 Exec 字段 / command 字段**，禁止提前优化 —— 见 `bin2linyaps.constraints` SKILL 的「wrapper / command 契约」（Exec、command 由 `pak_linyaps.sh` 构建时 wrapper 机制自动处理，提前修改会导致 wrapper 失效）
 - 应用无法正确启动

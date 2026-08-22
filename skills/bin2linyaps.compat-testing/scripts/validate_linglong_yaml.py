@@ -226,13 +226,25 @@ class LinglongYamlValidator:
                 and not self._contains_unresolved_vars(value)
                 and not (isinstance(value, str) and value.strip() == "")
             ):
+                old_val = value.strip()
+                expected_var = "ll_version"
+                if field_path == "version":
+                    sed_cmd = (
+                        f"sed -i -E 's/^version:.*/version: \"${{{expected_var}}}\"/' "
+                        f"{self.input_file}"
+                    )
+                else:  # package.version
+                    sed_cmd = (
+                        f"sed -i -E 's/^\\s*version:.*/    version: \"${{{expected_var}}}\"/' "
+                        f"{self.input_file}"
+                    )
                 result.add_fail(
                     field_path,
                     f"Required field '{field_path}' has been hardcoded to a concrete value: "
-                    f"'{value.strip()}'. It must remain as a variable reference (e.g., "
+                    f"'{old_val}'. It must remain as a variable reference (e.g., "
                     f"${{ll_version}}) because pak_linyaps.sh will substitute it at "
                     f"build time via envsubst. If the LLM replaced the variable placeholder, "
-                    f"please restore it to ${{ll_version}}.",
+                    f"restore it with: `{sed_cmd}`",
                 )
             else:
                 result.add_pass(field_path, f"Field '{field_path}' exists")
@@ -300,19 +312,21 @@ class LinglongYamlValidator:
         """
         # Check 1: Field exists
         if field_value is None:
+            fix = f"{field_name}: {default_id}/{default_version}"
             result.add_fail(
                 field_name,
                 f"Required field '{field_name}' is missing. "
-                f"Suggested fix: {field_name}: {default_id}/{default_version}",
+                f"Suggested fix: {fix}",
             )
             return
 
         # Check 2: Field is not empty
         if isinstance(field_value, str) and field_value.strip() == "":
+            fix = f"{field_name}: {default_id}/{default_version}"
             result.add_fail(
                 field_name,
                 f"Required field '{field_name}' is empty. "
-                f"Suggested fix: {field_name}: {default_id}/{default_version}",
+                f"Suggested fix: {fix}",
             )
             return
 
@@ -320,21 +334,29 @@ class LinglongYamlValidator:
 
         # Check 3: No unresolved variable references
         if self._contains_unresolved_vars(field_str):
+            fix_cmd = (
+                f"sed -i -E 's/^{field_name}:.*/{field_name}: {default_id}\\/{default_version}/' "
+                f"{self.input_file}"
+            )
             result.add_fail(
                 field_name,
                 f"Field '{field_name}' contains unresolved variable reference: '{field_str}'. "
                 f"This is likely caused by envsubst not replacing the variable (empty value). "
-                f"Suggested fix: ensure the variable is set before envsubst, "
-                f"or use actual value like '{default_id}/{default_version}'",
+                f"Execute to fix: `{fix_cmd}`",
             )
             return
 
         # Check 4: Format is id/version
         if "/" not in field_str:
+            fix_cmd = (
+                f"sed -i -E 's/^{field_name}:.*/{field_name}: {default_id}\\/{default_version}/' "
+                f"{self.input_file}"
+            )
             result.add_fail(
                 field_name,
                 f"Field '{field_name}' is missing '/' separator: '{field_str}'. "
-                f"Expected format: id/version (e.g., {default_id}/{default_version})",
+                f"Expected format: id/version (e.g., {default_id}/{default_version}). "
+                f"Execute to fix: `{fix_cmd}`",
             )
             return
 
@@ -355,10 +377,15 @@ class LinglongYamlValidator:
         # Check 6: Version format (X.Y.Z or X.Y.Z.W)
         version_pattern = r"^(\d+)\.(\d+)\.(\d+)(\.\d+)?$"
         if not re.match(version_pattern, field_version):
+            fix_cmd = (
+                f"sed -i -E 's/^{field_name}:.*/{field_name}: {field_id}\\/{default_version}/' "
+                f"{self.input_file}"
+            )
             result.add_fail(
                 f"{field_name}.version",
                 f"Version part '{field_version}' has invalid format. "
-                f"Expected: X.Y.Z or X.Y.Z.W (e.g., 25.2.2 or 23.1.0.1)",
+                f"Expected: X.Y.Z or X.Y.Z.W (e.g., 25.2.2 or 23.1.0.1). "
+                f"Execute to fix: `{fix_cmd}`",
             )
         else:
             result.add_pass(
