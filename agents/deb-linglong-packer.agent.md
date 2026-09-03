@@ -218,6 +218,10 @@ permission:
 > **注意**：所有腳本調用使用相對於 `WORKSPACE_ROOT` 的路徑，**不要**使用 `cd` 切換工作目錄後再執行。
 > **用戶不可獨立調用**：所有子 skill 設置為 `user-invocable: false`，只能通過 agent 工作流間接使用。
 
+### Multica 任务身份
+
+平台 handoff 后必须提取 `Your assigned issue ID: <UUID>`，严格校验完整小写 UUID，并执行 `export MULTICA_ISSUE_TASK_ID=<UUID>`；所有子 skill、runner 和最终状态回报继承该变量。不得从 issue 列表首项、历史评论或 workspace 推断任务。缺失、非法或与 pkgName/arch/type 不一致时终止为结构化 `blocked`，不发送任何评论、指派或状态请求。
+
 ## 工作流程
 
 ### Phase 1: 初始化
