@@ -32,6 +32,14 @@ url_decode() {
 }
 
 DEB_CACHE="/tmp/lingyaps-debs"
+
+# 重要目录白名单：只有列入其中的顶层目录才会被复制进 binary_dir（binary_dir 等价容器虚拟 /usr）。
+# 仅保留 FHS /usr 合法子目录（bin/lib/share/sbin/...）；opt、var、etc、srv、tmp 等
+# 不属于 /usr 层级，一律不复制（避免生成 /usr/opt、/usr/var 等非法路径）。
+# 维护：在此数组新增/删减目录名即可控制复制范围，可持续扩展。
+# usr 为特例——其内容平铺进 binary_dir（usr/bin -> bin），而非复制成 usr/usr/…
+IMPORTANT_DIRS=(usr bin sbin lib lib32 lib64 libexec include share local)
+
 mkdir -p "$BINARY_DIR" "$DEB_CACHE"
 
 FAIL_COUNT=0
@@ -65,15 +73,34 @@ for url in "${MISSING_DEPS_URLS[@]}"; do
     rm -rf "$EXTRACT_DIR"
     continue
   fi
-  # 复制解压出的全部顶层目录（usr、lib、etc、opt、sbin、bin、share、var 等）。
-  # 修复：部分 multiarch 老包（如 libpng12）将共享库放在顶层 lib/<multiarch>/，
-  # 而非 usr/ 下，仅复制 usr/ 会丢弃真正的 .so。
+  # 只复制白名单内 FHS /usr 合法的重要目录（见脚本顶部 IMPORTANT_DIRS，可持续维护）。
+  # usr 平铺其子项（usr/bin -> bin），否则会复制成 usr/usr/…，使依赖的 bin/ 可执行
+  # 文件与 lib/ 库永远到不了预期路径；其余白名单顶层目录（如 legacy 包顶层
+  # lib/<multiarch>/ 的 .so）直接复制。
   for entry in "$EXTRACT_DIR"/*; do
     [ -e "$entry" ] || continue
-    if ! cp -rf "$entry" "$BINARY_DIR/"; then
-      echo "WARN: 复制失败: $entry -> $BINARY_DIR/" >&2
-      FAIL_COUNT=$((FAIL_COUNT + 1))
-      break
+    name="$(basename "$entry")"
+    important=0
+    for d in "${IMPORTANT_DIRS[@]}"; do
+      if [ "$d" = "$name" ]; then
+        important=1
+        break
+      fi
+    done
+    [ "$important" -eq 1 ] || continue
+    if [ "$name" = "usr" ] && [ -d "$entry" ]; then
+      for sub in "$entry"/*; do
+        [ -e "$sub" ] || continue
+        if ! cp -rf "$sub" "$BINARY_DIR/"; then
+          echo "WARN: 复制失败: $sub -> $BINARY_DIR/" >&2
+          FAIL_COUNT=$((FAIL_COUNT + 1))
+        fi
+      done
+    else
+      if ! cp -rf "$entry" "$BINARY_DIR/"; then
+        echo "WARN: 复制失败: $entry -> $BINARY_DIR/" >&2
+        FAIL_COUNT=$((FAIL_COUNT + 1))
+      fi
     fi
   done
   rm -rf "$EXTRACT_DIR"

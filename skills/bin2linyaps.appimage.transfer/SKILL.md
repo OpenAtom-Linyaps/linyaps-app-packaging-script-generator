@@ -319,6 +319,9 @@ cp "${skill_root}/scripts/analyze_entry_script.sh" "${project_dir}/scripts/"
 cp "${skill_root}/scripts/dedup_desktop_files.sh" "${project_dir}/scripts/"
 cp "${skill_root}/scripts/validate_bin_nesting.sh" "${project_dir}/scripts/"
 cp "${skill_root}/scripts/download_missing_deps.sh" "${project_dir}/scripts/"
+# 存量部署提示：download_missing_deps.sh 是静态快照，随初始化复制进工程 scripts/。
+# 若工程在脚本修复 usr/ 平铺（不再产生 binary_dir/usr/…）之前初始化，需重新执行上面这条 cp 刷新，
+# 否则依赖的 bin/lib 仍会落到 /usr/usr/…。
 cp "${skill_root}/scripts/handle_special_paths.sh" "${project_dir}/scripts/"
 chmod +x "${project_dir}/scripts/"*.sh
 

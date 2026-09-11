@@ -63,6 +63,9 @@ cp "scripts/handle_special_paths.sh" "${project_dir}/scripts/" && chmod +x "${pr
 cp "scripts/dedup_desktop_files.sh" "${project_dir}/scripts/" && chmod +x "${project_dir}/scripts/dedup_desktop_files.sh"
 cp "scripts/validate_bin_nesting.sh" "${project_dir}/scripts/" && chmod +x "${project_dir}/scripts/validate_bin_nesting.sh"
 cp "scripts/download_missing_deps.sh" "${project_dir}/scripts/" && chmod +x "${project_dir}/scripts/download_missing_deps.sh"
+# 存量部署提示：download_missing_deps.sh 是静态快照，随初始化复制进工程 scripts/。
+# 若工程在本 skill 修复 usr/ 平铺（不再产生 binary_dir/usr/…）之前初始化，
+# 其 scripts/ 内仍是旧脚本；需重新执行上面这条 cp 刷新，否则依赖的 bin/lib 仍会落到 /usr/usr/…。
 if [ -f "scripts/analyze_entry_script.sh" ]; then
   cp "scripts/analyze_entry_script.sh" "${project_dir}/scripts/" && chmod +x "${project_dir}/scripts/analyze_entry_script.sh"
 fi
