@@ -11,7 +11,7 @@
 #=============================================================================
 
 srcType="tar"
-templateVer="2026.8.14.3"
+templateVer="2026.9.11.1"
 
 set -x
 
@@ -981,6 +981,11 @@ WRAPPER_EOF
 	# 此文件用於標識由 linyaps 系統生成的構建產物
 	touch "${binary_dir}/.linyaps_genius"
 	echo "Created identity file: ${binary_dir}/.linyaps_genius"
+
+	# 注释掉所有 .desktop 文件中的 Path= 键
+	# 源 desktop 的 Path 键为宿主绝对路径，在沙箱内无效，残留会干扰启动
+	# 在 ll-builder build 之前执行，确保打包产物不含 Path 键
+	"${project_root}/scripts/disable_desktop_path_key.sh" "${build_tmp_dir}"
 
 	## Building & Exporting
 	ll-builder build ${build_extra_args}

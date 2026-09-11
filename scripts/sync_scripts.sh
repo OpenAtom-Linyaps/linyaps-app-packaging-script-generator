@@ -27,6 +27,7 @@ CANONICAL="${REPO_ROOT}/skills/bin2linyaps.deb.project-gen/scripts"
 SHARED_SCRIPTS=(
     "handle_special_paths.sh"
     "dedup_desktop_files.sh"
+    "disable_desktop_path_key.sh"
     "validate_bin_nesting.sh"
     "analyze_entry_script.sh"
     "download_missing_deps.sh"
