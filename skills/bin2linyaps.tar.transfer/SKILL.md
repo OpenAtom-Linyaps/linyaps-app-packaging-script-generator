@@ -320,6 +320,9 @@ cp "${skill_root}/scripts/scan_executables.sh" "${project_dir}/scripts/"
 chmod +x "${project_dir}/scripts/scan_executables.sh"
 cp "${skill_root}/scripts/download_missing_deps.sh" "${project_dir}/scripts/"
 chmod +x "${project_dir}/scripts/download_missing_deps.sh"
+# 存量部署提示：download_missing_deps.sh 是静态快照，随初始化复制进工程 scripts/。
+# 若工程在脚本修复 usr/ 平铺（不再产生 binary_dir/usr/…）之前初始化，需重新执行上面这条 cp 刷新，
+# 否则依赖的 bin/lib 仍会落到 /usr/usr/…。
 
 # 拷貝入口腳本分析器（用於檢測使用 $1/$2 的風險腳本）
 cp "${skill_root}/scripts/analyze_entry_script.sh" "${project_dir}/scripts/"
