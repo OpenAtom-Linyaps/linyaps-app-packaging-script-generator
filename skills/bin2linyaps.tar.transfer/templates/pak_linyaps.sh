@@ -11,7 +11,7 @@
 #=============================================================================
 
 srcType="tar"
-templateVer="2026.9.11.1"
+templateVer="2026.9.14.1"
 
 set -x
 
@@ -875,7 +875,17 @@ WRAPPER_EOF
 							new_exec="${new_exec} ${exec_args}"
 						fi
 						# 在文件中替換該行
-						sed -i "s|${exec_line}|${new_exec}|" "${desktop_file}"
+                        # 逐行替换完整 Exec 行；原始命令可能含 |、引号、反斜杠等 sed 特殊字符。
+                        local tmp_exec_file="${desktop_file}.tmp"
+                        > "${tmp_exec_file}"
+                        while IFS= read -r line; do
+                            if [[ "${line}" == "${exec_line}" ]]; then
+                                printf '%s\n' "${new_exec}" >> "${tmp_exec_file}"
+                            else
+                                printf '%s\n' "${line}" >> "${tmp_exec_file}"
+                            fi
+                        done < "${desktop_file}"
+                        mv "${tmp_exec_file}" "${desktop_file}"
 					done < <(grep "^Exec=" "${desktop_file}")
 					echo "Updated Exec= in: ${desktop_file} (custom binary: ${exec_target})"
 				else

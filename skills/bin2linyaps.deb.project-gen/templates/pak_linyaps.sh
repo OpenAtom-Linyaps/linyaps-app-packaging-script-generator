@@ -3,7 +3,7 @@
 set -x
 
 srcType="deb"
-templateVer="2026.9.11.1"
+templateVer="2026.9.14.1"
 
 # 默認 base/runtime 配置（可通過命令行參數覆蓋）
 DEFAULT_BASE_ID="org.deepin.base"
@@ -951,16 +951,10 @@ WRAPPER_EOF
 
 						local do_replace=false
 
-						# 优先级1: Exec 行包含 binary_name → 直接替换
-						if [[ "${line}" == Exec=*${binary_name}* ]]; then
-							do_replace=true
-						# 优先级2: binary_name 来自 CSV 原始配置且存在于 binary_dir，
-						#           exec_bin_name 也在 binary_dir 中 → 强制使用 binary_name.wrapper
-						elif [ "${binary_name_is_original}" = true ] && \
-						     find "${binary_dir}" -type f -name "${exec_bin_name}" 2>/dev/null | grep -q .; then
-							echo "  [Info] Desktop Exec '${exec_bin_name}' replaced with configured '${exec_target}'"
-							do_replace=true
-						fi
+                        # wrapper 已由当前构建流程成功创建；统一回写所有有效 desktop Exec，
+                        # 避免复杂命令（如 bash -c、sed、引号和管道）导致 binary_name 匹配失效。
+                        # 仍保留 Exec 的参数字段，并由 wrapper 原样接收。
+                        local do_replace=true
 
 						if [ "${do_replace}" = true ]; then
 							# 若检测到有风险的脚本，过滤掉非 freedesktop 占位符参数
