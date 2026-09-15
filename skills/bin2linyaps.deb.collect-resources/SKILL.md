@@ -275,6 +275,8 @@ python3 common-data-verify.py <files_res_dir> --json --output report.json
 }
 ```
 
+> **上下文效率**：输出已含 `collected` 计数字段（desktop/icons/mime 等数量）。Agent 只记录 `collected` 计数与目标目录 listing，**不逐文件 append 完整路径**；无资源包（全为 0）直接输出空树。
+
 ## 资源映射规则
 
 | deb路径 | files_res路径 | 说明 |

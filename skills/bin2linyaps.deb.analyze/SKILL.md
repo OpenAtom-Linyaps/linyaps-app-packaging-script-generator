@@ -213,6 +213,10 @@ ll_arch = map_architecture("arm64")  # 返回 "aarch64"
 3. 依赖解析会去除版本约束，仅保留包名
 4. 版本转换会去除epoch和后缀，补齐到4位数字
 
+## ⚠️ 上下文效率
+
+> 本 skill 输出含全量文件路径列表（`files` 字段）。Agent 消费时**只读 `package_id`/`ll_version`/`ll_architecture`/`depends`/`files` 的计数**，不将完整 `files` 路径列表 append 进上下文；`files` 细节由后续 skill（collect-resources）按需读取。
+
 ## 后续步骤
 
 deb 包分析完成后，应调用 `bin2linyaps.deb.project-gen` skill 生成玲珑打包工程：

@@ -48,6 +48,8 @@ com.example.app,x86_64,1.0.0,https://example.com/app.deb
 
 批量初始化会为每个任务创建 `CI_ll_<pkgName>` 目录，包含：`linglong.yaml`、`pak_linyaps.sh`、`scripts/`、`config/`（含白名单）、`templates/files_res/`（空骨架）。
 
+> **上下文效率**：生成工程后 agent **禁止整卷 read `CI_ll_<package_id>/` 全树**。只读 `linglong.yaml` + `scripts/` 目录 listing；`pak_linyaps.sh`（1127 行模板正文）只在构建时由脚本自身执行，init 阶段不进入 agent 上下文，仅 `grep '^ll_id=\|^binary_name='` 确认注入正确。
+
 ## 工作流程
 
 ### 1. 准备工程目录
