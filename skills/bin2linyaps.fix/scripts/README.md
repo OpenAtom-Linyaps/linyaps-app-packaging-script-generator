@@ -173,10 +173,10 @@
 ```bash
 # 在 bin2linyaps.deb.project-gen 的 SKILL.md 中添加验证步骤
 # 1. 准备工程目录后，验证 package_id
-"${skill_root}/../linyaps.fix/scripts/validate_package_id.sh" "${project_dir}"
+"skills/bin2linyaps.fix/scripts/validate_package_id.sh" "${project_dir}"
 
 # 2. 如果验证失败，调用修复脚本
-"${skill_root}/../linyaps.fix/scripts/fix_package_id.sh" "${project_dir}" --new-id "${package_id}"
+"skills/bin2linyaps.fix/scripts/fix_package_id.sh" "${project_dir}" --new-id "${package_id}"
 ```
 
 ---

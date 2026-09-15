@@ -36,8 +36,6 @@ bin2linyaps.appimage.transfer/
 │   └── files_res/              # 资源文件目录
 ├── examples/                   # 示例文件
 │   └── build_config.example.json # 配置示例
-├── config/                     # 配置文件
-│   └── base_runtime_whitelist.conf # 白名单配置（待复制）
 ├── SKILL.md                    # 技能定义（待创建）
 ├── README.md                   # 本文档
 ├── IMPLEMENTATION.md           # 实现方案文档

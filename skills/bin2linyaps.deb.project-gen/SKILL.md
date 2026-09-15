@@ -72,20 +72,16 @@ if [ -f "scripts/analyze_entry_script.sh" ]; then
   cp "scripts/analyze_entry_script.sh" "${project_dir}/scripts/" && chmod +x "${project_dir}/scripts/analyze_entry_script.sh"
 fi
 
-# 拷贝白名单配置（优先全局）
-if [ -f "${skill_root}/../config/base_runtime_whitelist.conf" ]; then
-  cp "${skill_root}/../config/base_runtime_whitelist.conf" "${project_dir}/config/"
-else
-  cp "${skill_root}/config/base_runtime_whitelist.conf" "${project_dir}/config/"
-fi
+# 拷贝白名单配置（本 skill 自带的 config/ 自包含副本）
+cp "${skill_root}/config/base_runtime_whitelist.conf" "${project_dir}/config/"
 # 注意：不创建 src/ 目录，deb文件路径由用户执行脚本时指定
 ```
 
 **验证 package_id**：
 
 ```bash
-"${skill_root}/../linyaps.fix/scripts/validate_package_id.sh" "${project_dir}"
-"${skill_root}/../linyaps.fix/scripts/fix_package_id.sh" "${project_dir}" --new-id "${package_id}"   # 验证失败时
+"skills/bin2linyaps.fix/scripts/validate_package_id.sh" "${project_dir}"
+"skills/bin2linyaps.fix/scripts/fix_package_id.sh" "${project_dir}" --new-id "${package_id}"   # 验证失败时
 ```
 
 **package_id 格式规范**：反向域名格式（`com.example.app`），小写字母/数字/下划线/点，至少两个点分隔部分，最大 255 字符。
@@ -128,12 +124,12 @@ build: |
 
 **在生成 pak_linyaps.sh 之前必须验证 base/runtime 组合**。不在白名单中的组合将阻止任务（exit 1）。
 
-**白名单查找优先级（本地优先全局）**：
+**白名单查找优先级（skill 自帶 config/ 自包含副本，全局為參考）**：
 1. CLI `--whitelist` 指定的路径
 2. 环境变量 `LINGLONG_WHITELIST_FILE`
-3. 工程目录 `config/base_runtime_whitelist.conf`
-4. skill 级别 `config/base_runtime_whitelist.conf`
-5. **全局 `skills/config/base_runtime_whitelist.conf`（推荐维护）** ⭐
+3. 工程目录 `config/base_runtime_whitelist.conf`（由本 skill 从自带副本同步）
+4. **本 skill 自带 `config/base_runtime_whitelist.conf`（自包含，`${skill_root}/config/`）** ⭐
+5. 全局 `skills/config/base_runtime_whitelist.conf`（参考副本）
 
 ```bash
 whitelist_file=""
@@ -145,8 +141,6 @@ elif [ -f "${project_dir}/config/base_runtime_whitelist.conf" ]; then
   whitelist_file="${project_dir}/config/base_runtime_whitelist.conf"
 elif [ -f "${skill_root}/config/base_runtime_whitelist.conf" ]; then
   whitelist_file="${skill_root}/config/base_runtime_whitelist.conf"
-elif [ -f "${skill_root}/../config/base_runtime_whitelist.conf" ]; then
-  whitelist_file="${skill_root}/../config/base_runtime_whitelist.conf"
 fi
 
 if [ -z "${whitelist_file}" ]; then
@@ -164,7 +158,7 @@ else
   if [ "${found}" -eq 0 ]; then
     echo "錯誤: base/runtime 組合不在白名單中，任務被阻止！" >&2
     echo "  當前組合: ${base_id}/${base_version} + ${runtime_id}/${runtime_version}" >&2
-    echo "  請先在白名單中添加（推薦：skills/config/base_runtime_whitelist.conf）" >&2
+    echo "  请先在本 skill 白名单中添加（配置：${skill_root}/config/base_runtime_whitelist.conf）" >&2
     exit 1
   fi
   echo "白名單驗證通過: ${base_id}/${base_version} + ${runtime_id}/${runtime_version}"
@@ -183,7 +177,7 @@ fi
 | `org.deepin.base/25.2.2` | `-` | 纯 base 应用（无 runtime） |
 | `org.deepin.base/23.1.0` | `-` | 纯 base 应用（无 runtime，23.1.0） |
 
-**推荐维护全局白名单**（`skills/config/base_runtime_whitelist.conf`），生成时自动同步到工程目录。
+**推荐维护本 skill 白名单**（`${skill_root}/config/base_runtime_whitelist.conf`，skill 自包含副本；同步更新全局 `skills/config/` 参考副本），生成时自动同步到工程目录。
 
 ### 3. 生成 pak_linyaps.sh
 

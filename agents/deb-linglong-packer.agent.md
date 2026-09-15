@@ -21,29 +21,7 @@ permission:
 
 全局配置存放在獨立的 `agent-config.json` 文件中（固定路徑 `WORKSPACE_ROOT/agent-config.json`），與任務文件分開管理。
 
-**`agent-config.json` 結構**：
-```json
-{
-  "global": {
-    "projects_root": "<本地項目目錄>",
-    "projects_repo": "<Git 倉庫 URL>",
-    "base": "<基礎運行環境>",
-    "runtime": "<運行時環境>",
-    "output_dir": "<已解析的绝对产出目录>",
-    "data_dir": "<數據記錄目錄>",
-    "build_tmp_dir": "<構建緩存目錄>",
-    "src_dir": "<資源下載目錄>"
-  },
-  "extension": [
-    {
-      "id": "<拓展標識符>",
-      "description": "<LLM 可識別的自然語言描述，說明用途和使用場景>",
-      "path": "<外部配置文件的絕對路徑>"
-    }
-  ],
-  "version_extract_examples": [ ... ]
-}
-```
+**`agent-config.json` 結構**：字段定義與預設值以 `agent-config.json` 為準（含 `global`、`extension`、`version_extract_examples` 區段），此處不重複展開 JSON 結構。
 
 **`extension` 區段說明**：
 `extension` 用於管理所有全局拓展配置，agent-config **只做引用聲明，不嵌入具體內容**。每個條目包含：
@@ -58,19 +36,7 @@ permission:
 | `arch_mapping` | URL 架構關鍵字到 linyaps arch 的映射表，用於從下載 URL 中識別並轉換目標架構 | `skills/config/arch_mapping.json` |
 | `base_runtime_whitelist` | 玲瓏 base/runtime 全局白名單，定義所有已知合規的 base/runtime 組合，用於驗證和生成階段的組合檢查 | `skills/config/base_runtime_whitelist.conf` |
 
-**當前值**詳見 `agent-config.json` 的對應區段。
-
-**配置欄位說明**：
-
-| 欄位 | 用途 | 預設值 |
-|------|------|--------|
-| `base` | 玲瓏基礎運行環境 | `org.deepin.base/25.2.2` |
-| `runtime` | 玲瓏運行時環境 | `org.deepin.runtime.dtk/25.2.2` |
-| `projects_root` | 本地項目目錄 | `./projects` |
-| `output_dir` | 產出目錄 | `<已解析的绝对路径>` |
-| `data_dir` | 數據記錄目錄 | `<已解析的绝对路径>` |
-| `build_tmp_dir` | 構建緩存目錄 | `./build_cache` |
-| `src_dir` | 資源下載目錄 | `./src` |
+**當前值**詳見 `agent-config.json` 的對應區段（含 `global` 各欄位預設值）。
 
 **載入順序（優先級從高到低）**：
 1. CSV 顯式字段（最高優先級）
@@ -183,7 +149,6 @@ permission:
 ## 默认设定
 - base 預設值: `org.deepin.base/25.2.2`（可被 `agent-config.json` 的 `global.base` 覆蓋）
 - runtime 預設值: `org.deepin.runtime.dtk/25.2.2`（可被 `agent-config.json` 的 `global.runtime` 覆蓋）
-- 載入順序（優先級從高到低）：CSV 顯式字段 > 任務 JSON 的 `global` 區段 > `agent-config.json` > 此處預設值
 
 ## Skills 目录约定
 
@@ -208,7 +173,7 @@ permission:
 **唯一約定**：skills 固定位於 `WORKSPACE_ROOT/skills/<name>/SKILL.md`，`WORKSPACE_ROOT` 即本 agent 工作目錄（包含 `skills/` 與 `agents/` 的目錄）。**無需任何搜索操作**。
 
 載入方式（二選一，按環境能力）：
-1. **`skill()` 工具**：`skill({ name: "<skill名>" })` 按 name 直接載入 `skills/<name>/SKILL.md`；
+1. **`skill()` 工具**：`skill("<skill名>")` 按 name 直接載入 `skills/<name>/SKILL.md`；
 2. **文件兜底**：若 `skill()` 不可用，直接 `cat skills/<name>/SKILL.md`。
 
 > **注意**：所有腳本調用使用相對於 `WORKSPACE_ROOT` 的路徑，**不要**使用 `cd` 切換工作目錄後再執行。
@@ -232,8 +197,7 @@ permission:
 
 2. 运行时禁止 `${tag}` 和日期路径命名；入口传入已解析的绝对配置路径和值。
 
-3. **載入順序（優先級從高到低）**：
-   - CSV 顯式字段（如 `base`、`runtime`）> 任務 JSON 的 `global` 區段 > `agent-config.json` > agent.md 預設值
+3. **載入順序**：遵循「全局聲明」中「載入順序（優先級從高到低）」一章：CSV 顯式字段 > 任務 JSON 的 `global` 區段 > `agent-config.json` > agent.md 預設值。
 
 #### 1.2 解析输入参数
 
@@ -299,7 +263,7 @@ b. **创建任务列表**
 在初始化末尾一次性载入通用构建约束，后续步骤统一引用，不重复展开：
 
 ```
-skill({ name: "bin2linyaps.constraints" })   # 一次性载入 wrapper/command、${ll_version}、package_id、base/runtime、依赖核验、模板完整性 约束
+skill("bin2linyaps.constraints")   # 一次性载入 wrapper/command、${ll_version}、package_id、base/runtime、依赖核验、模板完整性 约束
 ```
 
 > **已载入约束**：wrapper/command 契约、version 契约（`${ll_version}`）、package_id 契约、base/runtime 白名单、依赖存在性核验、模板完整性。后续各步骤按此约束执行，各子 skill **不再复述**整段约束。
@@ -311,273 +275,40 @@ skill({ name: "bin2linyaps.constraints" })   # 一次性载入 wrapper/command�
 - 包含 → 标记 `COMPAT_TESTING_ENABLED=true`，后续执行兼容性测试 + 缺失依赖修复
 - 不包含 → 标记 `COMPAT_TESTING_ENABLED=false`，跳过所有兼容性测试和缺失依赖修复步骤
 
-根据包类型选择处理路径：
+根据包类型选择处理路径。三条路径的步骤体完全由所选 skill 承担，细节以对应 `skills/<name>/SKILL.md` 为准，此处仅列出调度顺序与预期产出（脚本路径见「工具调用示例」）。
 
 #### 路径 A: deb 包处理
 
-对每个 deb 包执行以下步骤：
+依序调用（每步完成后按预期产出校验，失败按「失败处理策略」处理）：
 
-##### Step 1: Deb分析
-调用 \`bin2linyaps.deb.analyze\` skill：
-- 解析deb元数据（包名、版本、架构、依赖）
-- 解压deb文件到临时目录
-- 提取文件结构信息
-- **输出**: deb信息JSON
-
-##### Step 2: 工程生成
-调用 \`bin2linyaps.deb.project-gen\` skill：
-- 创建工程目录 `CI_ll_<package_id>`
-- 生成 `linglong.yaml` 模板
-- 生成 `pak_linyaps.sh` 脚本
-- 使用CSV配置填充base/runtime/push
-- **注意**: 工程目录不包含deb源文件，deb路径由用户执行脚本时指定
-- **输出**: 工程目录路径
-
-**⚠️ 重要约束**：
-- `pak_linyaps.sh` 必须从 `skills/bin2linyaps.deb.project-gen/templates/pak_linyaps.sh` **完整复制**
-- **禁止简化**脚本内容，包括删除脚本调用或合并函数
-- `linglong.yaml` 的 `command` 字段在模板中为空字符串 `""`，由 `pak_linyaps.sh` 在构建时通过 wrapper 机制动态设置
-- **禁止**在 envsubst 阶段导出 `command` 变量
-- 模板文件路径：`templates/linglong.yaml`、`templates/files_res`
-
-#### Step 3: 资源收集
-调用 \`bin2linyaps.deb.collect-resources\` skill：
-- 从deb解压目录提取资源
-- 整理desktop、icons、appdata等
-- **修复desktop文件Icon路径**（将绝对路径改为相对路径）
-- **⚠️ 禁止修改 Exec 路径**：Exec 字段由 `pak_linyaps.sh` 在构建时通过 wrapper 机制自动处理
-- 验证资源合规性
-- **暂停**: 展示收集的资源，等待用户确认
-- **输出**: files_res目录结构
-
-**重要说明**：desktop 文件的 Exec 字段和 linglong.yaml 的 command 字段由 `pak_linyaps.sh` 脚本在构建时通过 wrapper 机制自动处理。wrapper 机制会：
-1. 从 desktop 文件自动提取 `binary_name`
-2. 创建 wrapper 脚本（`bin/${binary_name}.wrapper`）
-3. 自动更新 `linglong.yaml` 的 `command` 字段为 wrapper 路径
-4. 自动更新 desktop 文件的 `Exec=` 字段为 wrapper 路径
-
-**提前修改 Exec 会导致 wrapper 机制失效**，因此资源收集阶段只修复 Icon 路径。
-
-#### Step 4: 项目结构验证
-调用 \`bin2linyaps.validate-structure\` skill：
-- 验证工程目录结构完整性
-- 检查必要文件是否存在（如 `pak_linyaps.sh`、`linglong.yaml`）
-- 检查 `templates/files_res/share/applications/*.desktop` 至少存在1个
-- 检查 `templates/files_res/share/icons/hicolor` 目录结构
-- 验证脚本文件可执行权限
-- **输出**: 验证报告（JSON格式）
-- **失败处理**: 如果验证失败，根据错误类型决定是否调用 `bin2linyaps.fix`
-
-#### Step 5: 兼容性测试（仅当 COMPAT_TESTING_ENABLED=true 时执行）
-调用 \`bin2linyaps.compat-testing\` skill 自动化执行：
-
-1. **构造子任务 JSON**（从 agent-config 和当前项目信息组装）：
-   ```json
-   {
-     "global": {
-       "projects_root": "<projects_root>",
-       "output_dir": "<output_dir>",
-       "build_tmp_dir": "<build_tmp_dir>",
-       "src_dir": "<src_dir>"
-     },
-     "tasks": [
-       {
-         "pkgName": "<package_id>",
-         "src_url": "<src_url>",
-         "arch": "<arch>",
-         "orig_version": "<version>"
-       }
-     ]
-   }
-   ```
-
-2. **前置检测**（可选）：
-   ```bash
-   bash skills/bin2linyaps.compat-testing/scripts/validate_projects.sh \
-     --task-file=<subtask.json> --output=reports/precheck.json
-   ```
-
-3. **执行全流程测试**：
-   ```bash
-   bash skills/bin2linyaps.compat-testing/scripts/run_tasks.sh <subtask.json>
-   ```
-
-4. **读取报告**：解析各任务的 `report.json`
-   - 全部 `passed` → 兼容性测试通过
-   - 存在 `failed` → 调用 `bin2linyaps.fix`
-   - **输出**: 测试报告（汇总 + 分步骤详情）
-
-#### Step 5.5: 缺失依赖修复（条件执行，依赖 Step 5 的构建产物）
-如果前一阶段的兼容性测试生成了 `missing_deps.json` 或 `missing_deps.csv`，调用 \`bin2linyaps.external-missing-deps-fetch\` skill 自动修复模板依赖：
-
-1. **检查构建元数据**：读取 `reports/<pkg>/build_meta.json`，检查 `missing_deps_json` 或 `missing_deps_csv` 是否为非 null
-   - 非 null → 存在缺失依赖，继续执行
-   - null → 跳过，无缺失依赖
-
-2. **执行缺失依赖获取**：
-   ```bash
-   # 从 build_meta.json 读取 build_tmp_dir
-   BUILD_TMP_DIR=$(python3 -c "import json; print(json.load(open('reports/<pkg>/build_meta.json'))['build_tmp_dir'])")
-   
-   # 调用 fetch_missing_deps.sh
-   bash skills/bin2linyaps.external-missing-deps-fetch/scripts/fetch_missing_deps.sh \
-     --project-dir=<project_dir> \
-     --build-tmp-dir=${BUILD_TMP_DIR}
-   ```
-
-3. **效果**：
-   - 更新 `templates/linglong.yaml` 的 `buildext.apt.depends`（保留 `${ll_version}` 等 envsubst 变量）
-- 生成 `missing_deps_urls.conf`（URL 配置，可人工编辑）
-    - 下载解压由静态脚本 `scripts/download_missing_deps.sh` 在 `pak_linyaps.sh` 构建时完成
-   - **绝不修改** `build_tmp_dir` 中的任何文件
-
-4. **只执行一次**，不重复循环
-- **输出**: 更新后的 `templates/linglong.yaml` + 下载脚本
-
-#### Step 6: 问题修复（如需要）
-
-#### Step 7: 完成
-- 保存工程到最终位置
-- 清理临时文件
-- 更新任务状态
+1. `skill("bin2linyaps.deb.analyze")` — 解析 deb 元数据、解压、提取文件结构。预期产出：deb 信息 JSON。
+2. `skill("bin2linyaps.deb.project-gen")` — 创建工程目录 `CI_ll_<package_id>`，生成 `linglong.yaml`/`pak_linyaps.sh`（从 `skills/bin2linyaps.deb.project-gen/templates/` 完整复制，禁止简化、禁止在 envsubst 阶段填充 `command`）。预期产出：工程目录路径。
+3. `skill("bin2linyaps.deb.collect-resources")` — 提取 desktop/icons/appdata 资源，修复 desktop Icon 为相对路径（**禁止修改 Exec**，由 wrapper 机制处理）。暂停展示资源等待用户确认。预期产出：files_res 目录结构。
+4. `skill("bin2linyaps.validate-structure")` — 验证工程结构完整性（pak_linyaps.sh、linglong.yaml、desktop 存在、icons 层级、可执行权限）。预期产出：JSON 验证报告。失败→按错误类型决定是否调用 `bin2linyaps.fix`。
+5. （仅当 `COMPAT_TESTING_ENABLED=true`）`skill("bin2linyaps.compat-testing")` — 构造 subtask.json、可选前置 `validate_projects.sh`、执行 `run_tasks.sh`、读取 `report.json`。全部 `passed`→通过；存在 `failed`→调用 `bin2linyaps.fix`。预期产出：兼容性测试报告。
+6. （条件，依赖步骤 5 构建产物）`skill("bin2linyaps.external-missing-deps-fetch")` — 若 `reports/<pkg>/build_meta.json` 的 `missing_deps_json`/`missing_deps_csv` 非 null，调用 `fetch_missing_deps.sh --project-dir=<project_dir> --build-tmp-dir=<build_meta 的 build_tmp_dir>`；更新 `templates/linglong.yaml` 的 `buildext.apt.depends`、生成 `missing_deps_urls.conf`；**绝不修改** `build_tmp_dir`；只执行一次。预期产出：更新后的 `linglong.yaml` + 下载脚本。
+7. `skill("bin2linyaps.fix")`（如需要）— 修复 package_id、desktop Exec、版本等已验证问题。
+8. 完成：保存工程到最终位置、清理临时文件、更新任务状态。
 
 #### 路径 B: tar 归档包处理
 
-对每个 tar 归档包执行以下步骤：
+依序调用：
 
-##### Step 1: Tar 分析与工程生成
-调用 \`bin2linyaps.tar.transfer\` skill（整合了分析与工程生成）：
-- 验证 tar 文件格式并解压
-- 检测源码包（发现 CMakeLists.txt/Makefile 等时）
-  - 二進制包 → 掃描 desktop 文件、生成工程目錄，繼續 Step 2
-  - 源碼包 → 標記為 `src_pending`，調用指派 SKILL 轉交 `linyaps-src-init-1` 做源码初始化，跳過後續步驟
-- 扫描 desktop 文件提取 binary name 和 icon 路径
-- 若无 desktop Exec，使用 `scan_executables.sh` 自动扫描可执行文件
-- 按 XDG 规范处理 icon 目录结构和 desktop Icon= 字段
-- 生成工程目录 `CI_ll_<package_id>`
-- 生成 `pak_linyaps.sh` 脚本（tar 专用版，调用 `handle_special_paths.sh`）
-- 生成 `linglong.yaml` 模板
-- 拷贝 `handle_special_paths.sh` 到工程 `scripts/` 目录
-- 拷贝 `scan_executables.sh` 到工程 `scripts/` 目录
-- **输出**: 工程目录路径
-
-**⚠️ 重要约束**：
-- `pak_linyaps.sh` 必须从 `skills/bin2linyaps.tar.transfer/templates/pak_linyaps.sh` **完整复制**
-- **禁止简化**脚本内容，包括删除脚本调用或合并函数
-- `linglong.yaml` 的 `command` 字段在模板中为空字符串 `""`，由 `pak_linyaps.sh` 在构建时通过 wrapper 机制动态设置
-- **禁止**在 envsubst 阶段导出 `command` 变量
-- **禁止**在资源收集阶段修改 desktop 文件的 Exec 字段
-- 模板文件路径：`templates/linglong.yaml`、`templates/files_res`
-
-##### Step 2: 项目结构验证
-调用 \`bin2linyaps.validate-structure\` skill：
-- 验证工程目录结构完整性
-- 检查必要文件是否存在（如 `pak_linyaps.sh`、`linglong.yaml`）
-- 检查 `scripts/handle_special_paths.sh` 存在且可执行
-- 检查 `templates/files_res/share/applications/*.desktop` 至少存在1个
-- 检查 `templates/files_res/share/icons/hicolor` 目录结构
-- 验证脚本文件可执行权限
-- **输出**: 验证报告（JSON格式）
-- **失败处理**: 如果验证失败，根据错误类型决定是否调用 `bin2linyaps.fix`
-
-##### Step 3: 兼容性测试（仅当 COMPAT_TESTING_ENABLED=true 时执行） (tar 包)
-调用 \`bin2linyaps.compat-testing\` skill 自动化执行：
-
-1. **构造子任务 JSON**（从 agent-config 和当前项目信息组装）
-2. **前置检测**（可选）：`validate_projects.sh --task-file=<subtask.json>`
-3. **执行全流程测试**：`run_tasks.sh <subtask.json>`
-4. **读取报告**：全部 `passed` → 通过；存在 `failed` → 调用 `bin2linyaps.fix`
-- **输出**: 测试报告（汇总 + 分步骤详情）
-
-##### Step 3.5: 缺失依赖修复（条件执行，依赖 Step 3 的构建产物）
-如果前一阶段的兼容性测试生成了 `missing_deps.json` 或 `missing_deps.csv`，调用 \`bin2linyaps.external-missing-deps-fetch\` skill 自动修复模板依赖：
-
-1. **检查构建元数据**：读取 `reports/<pkg>/build_meta.json`，检查 `missing_deps_json` 或 `missing_deps_csv` 是否为非 null
-   - 非 null → 存在缺失依赖，继续执行
-   - null → 跳过，无缺失依赖
-
-2. **执行缺失依赖获取**：
-   ```bash
-   bash skills/bin2linyaps.external-missing-deps-fetch/scripts/fetch_missing_deps.sh \
-     --project-dir=<project_dir> \
-     --build-tmp-dir=$(python3 -c "import json;print(json.load(open('reports/<pkg>/build_meta.json'))['build_tmp_dir'])")
-   ```
-
-3. **只执行一次**，不重复循环
-- **输出**: 更新后的 `templates/linglong.yaml` + 下载脚本
-
-##### Step 4: 问题修复（如需要）
-
-##### Step 5: 完成
-- 保存工程到最终位置
-- 清理临时文件
-- 更新任务状态
+1. `skill("bin2linyaps.tar.transfer")` — 验证并解压 tar；检测源码包（CMakeLists.txt/Makefile）：二進制包→生成工程目录 `CI_ll_<package_id>`（拷贝 `handle_special_paths.sh`、`scan_executables.sh` 到工程 `scripts/`），源码包→标记 `src_pending`，调用指派 SKILL 转交 `linyaps-src-init-1` 做源码初始化后跳过后续步骤。扫描 desktop 提取 binary/icon，无 Exec 用 `scan_executables.sh`；按 XDG 处理 icon 结构；生成 `pak_linyaps.sh`（tar 专用版）与 `linglong.yaml` 模板（完整复制，禁止简化、禁止 envsubst 填充 `command`）。预期产出：工程目录路径。
+2. `skill("bin2linyaps.validate-structure")` — 验证工程结构（含 `scripts/handle_special_paths.sh` 存在且可执行）。失败→按需 `bin2linyaps.fix`。预期产出：JSON 验证报告。
+3. `skill("bin2linyaps.compat-testing")`（条件，`COMPAT_TESTING_ENABLED=true`）— 同路径 A 步骤 5。
+4. `skill("bin2linyaps.external-missing-deps-fetch")`（条件）— 同路径 A 步骤 6。
+5. `skill("bin2linyaps.fix")`（如需要）+ 完成（保存工程、清理临时、更新状态）。
 
 #### 路径 C: AppImage 包处理
 
-对每个 AppImage 包执行以下步骤：
+依序调用：
 
-##### Step 1: AppImage 分析与工程生成
-调用 \`bin2linyaps.appimage.transfer\` skill（整合了分析与工程生成）：
-- 提取 AppImage 元数据（包名、版本、架构）
-- 解压 AppImage 文件
-- 解析 Exec 命令（从 desktop 文件提取或自动检测）
-- 生成工程目录 `CI_ll_<package_id>`
-- 生成 `pak_linyaps.sh` 脚本（AppImage 专用版）
-- 生成 `linglong.yaml` 模板
-- 拷贝共享脚本到工程 `scripts/` 目录
-- **输出**: 工程目录路径
-
-**⚠️ 重要约束**：
-- `pak_linyaps.sh` 必须从 `skills/bin2linyaps.appimage.transfer/templates/pak_linyaps.sh` **完整复制**
-- **禁止简化**脚本内容，包括删除脚本调用或合并函数
-- `linglong.yaml` 的 `command` 字段在模板中为空字符串 `""`，由 `pak_linyaps.sh` 在构建时通过 wrapper 机制动态设置
-- **禁止**在 envsubst 阶段导出 `command` 变量
-- 模板文件路径：`templates/linglong.yaml`、`templates/files_res`
-
-##### Step 2: 项目结构验证
-调用 \`bin2linyaps.validate-structure\` skill：
-- 验证工程目录结构完整性
-- 检查必要文件是否存在（如 `pak_linyaps.sh`、`linglong.yaml`）
-- 检查 `scripts/extract_appimage.sh` 存在且可执行
-- 检查 `templates/files_res/share/applications/*.desktop` 至少存在1个
-- 检查 `templates/files_res/share/icons/hicolor` 目录结构
-- 验证脚本文件可执行权限
-- **输出**: 验证报告（JSON格式）
-- **失败处理**: 如果验证失败，根据错误类型决定是否调用 `bin2linyaps.fix`
-
-##### Step 3: 兼容性测试（仅当 COMPAT_TESTING_ENABLED=true 时执行） (AppImage 包)
-调用 \`bin2linyaps.compat-testing\` skill 自动化执行：
-
-1. **构造子任务 JSON**（从 agent-config 和当前项目信息组装）
-2. **前置检测**（可选）：`validate_projects.sh --task-file=<subtask.json>`
-3. **执行全流程测试**：`run_tasks.sh <subtask.json>`
-4. **读取报告**：全部 `passed` → 通过；存在 `failed` → 调用 `bin2linyaps.fix`
-- **输出**: 测试报告（汇总 + 分步骤详情）
-
-##### Step 3.5: 缺失依赖修复（条件执行，依赖 Step 3 的构建产物）
-如果前一阶段的兼容性测试生成了 `missing_deps.json` 或 `missing_deps.csv`，调用 \`bin2linyaps.external-missing-deps-fetch\` skill 自动修复模板依赖：
-
-1. **检查构建元数据**：读取 `reports/<pkg>/build_meta.json`，检查 `missing_deps_json` 或 `missing_deps_csv` 是否为非 null
-   - 非 null → 存在缺失依赖，继续执行
-   - null → 跳过，无缺失依赖
-
-2. **执行缺失依赖获取**：
-   ```bash
-   bash skills/bin2linyaps.external-missing-deps-fetch/scripts/fetch_missing_deps.sh \
-     --project-dir=<project_dir> \
-     --build-tmp-dir=$(python3 -c "import json;print(json.load(open('reports/<pkg>/build_meta.json'))['build_tmp_dir'])")
-   ```
-
-3. **只执行一次**，不重复循环
-- **输出**: 更新后的 `templates/linglong.yaml` + 下载脚本
-
-##### Step 4: 问题修复（如需要）
-
-##### Step 5: 完成
-- 保存工程到最终位置
-- 清理临时文件
-- 更新任务状态
+1. `skill("bin2linyaps.appimage.transfer")` — 提取 AppImage 元数据、解压、解析 Exec 命令（desktop 提取或自动检测）；生成工程目录 `CI_ll_<package_id>`、`pak_linyaps.sh`（AppImage 专用版）、`linglong.yaml` 模板，拷贝共享脚本到工程 `scripts/`（完整复制，禁止简化、禁止 envsubst 填充 `command`）。预期产出：工程目录路径。
+2. `skill("bin2linyaps.validate-structure")` — 验证工程结构（含 `scripts/extract_appimage.sh` 存在且可执行）。失败→按需 `bin2linyaps.fix`。预期产出：JSON 验证报告。
+3. `skill("bin2linyaps.compat-testing")`（条件）— 同路径 A 步骤 5。
+4. `skill("bin2linyaps.external-missing-deps-fetch")`（条件）— 同路径 A 步骤 6。
+5. `skill("bin2linyaps.fix")`（如需要）+ 完成（保存工程、清理临时、更新状态）。
 
 ### Phase 3: 批量处理
 
