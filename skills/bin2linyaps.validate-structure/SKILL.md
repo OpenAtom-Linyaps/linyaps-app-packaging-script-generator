@@ -99,6 +99,8 @@ if [ $? -ne 0 ]; then
 fi
 ```
 
+> **上下文效率**：调用务必带 `--json`，只把 JSON 报告（`passed`/`errors[]`/`summary`）纳入上下文；不要对 `CI_ll_<package_id>/` 做全量逐文件走查。失败项如需定位，仅对 `errors[].pattern` 指向的文件单独 read。
+
 ## 输出格式
 
 ### 人类可读格式
