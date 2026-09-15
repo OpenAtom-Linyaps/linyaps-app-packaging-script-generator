@@ -291,12 +291,12 @@ validate_base_runtime() {
 validate_base_runtime_whitelist() {
 	local wl_file=""
 
-	# 按優先級查找白名單配置文件（本地優先全局）：
+	# 按優先級查找白名單配置文件（skill 本地自包含優先）：
 	# 1. CLI 參數 --whitelist 指定的路徑
 	# 2. 環境變量 LINGLONG_WHITELIST_FILE 指定的路徑
 	# 3. 工程目錄下的 config/base_runtime_whitelist.conf
-	# 4. 腳本所在目錄的 config/base_runtime_whitelist.conf（skill 級別）
-	# 5. skills 全局目錄的 config/base_runtime_whitelist.conf（全局聲明）
+	# 4. 腳本所在目錄的 config/base_runtime_whitelist.conf（skill 自包含副本）
+	# 5. 向上查找全局 skills/config/base_runtime_whitelist.conf（參考副本）
 	if [ -n "${whitelist_file:-}" ] && [ -f "${whitelist_file}" ]; then
 		wl_file="${whitelist_file}"
 	elif [ -n "${LINGLONG_WHITELIST_FILE:-}" ] && [ -f "${LINGLONG_WHITELIST_FILE}" ]; then
@@ -304,12 +304,12 @@ validate_base_runtime_whitelist() {
 	elif [ -f "${project_root:-}/config/base_runtime_whitelist.conf" ]; then
 		wl_file="${project_root}/config/base_runtime_whitelist.conf"
 	else
-		# 嘗試相對於腳本目錄查找（skill 級別 → 全局）
+		# 嘗試相對於腳本目錄查找（skill 自包含副本 → 全局參考）
 		local script_dir
 		script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 		if [ -f "${script_dir}/config/base_runtime_whitelist.conf" ]; then
 			wl_file="${script_dir}/config/base_runtime_whitelist.conf"
-		# 全局白名單：腳本位於 skills/<skill>/templates/，全局配置位於 skills/config/
+		# 全局參考副本：腳本位於 skills/<skill>/templates/，向上查找 skills/config/
 		elif [ -f "${script_dir}/../config/base_runtime_whitelist.conf" ]; then
 			wl_file="${script_dir}/../config/base_runtime_whitelist.conf"
 		# 兼容：腳本位於更深層目錄時，向上查找 skills/config/

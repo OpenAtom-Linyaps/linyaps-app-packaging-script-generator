@@ -238,10 +238,10 @@ def fix_desktop_file(desktop_path: str, package_id: str):
 
 ### 5. 验证资源合规性
 
-调用 `common-data-verify.py` 验证：
+调用 `bin2linyaps.compat-testing` 的 `common-data-verify.py` 验证：
 
 ```bash
-python3 common-data-verify.py <files_res_dir> --json --output report.json
+python3 skills/bin2linyaps.compat-testing/scripts/common-data-verify.py <files_res_dir> --json --output report.json
 ```
 
 验证项：

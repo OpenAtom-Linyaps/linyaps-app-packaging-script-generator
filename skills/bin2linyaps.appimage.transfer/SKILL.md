@@ -279,7 +279,7 @@ fi
 
 ### Step 7: 生成玲瓏工程
 
-調用 `bin2linyaps.deb.project-gen` 子技能創建工程：
+使用本 skill 自有的 `templates/pak_linyaps.sh` 模板生成玲瓏工程：
 
 ```bash
 # 工程目錄命名
@@ -522,5 +522,5 @@ exec "${script_dir}/${wrapper}" "$@"
 
 ### 配置文件
 - `examples/build_config.example.json`：JSON 配置範例文件（`main`/`optional` 分組結構）
-- `config/base_runtime_whitelist.conf`：base/runtime 白名單配置
+- `config/base_runtime_whitelist.conf`：本 skill 自帶的白名單自包含副本（`${skill_root}/config/`），生成時以 `${skill_root}/config/` 拷貝到工程 config/；全局 `skills/config/` 為參考副本
 - `templates/linglong.yaml`：玲瓏工程模板（含 build 段）

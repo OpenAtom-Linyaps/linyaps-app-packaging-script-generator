@@ -242,7 +242,7 @@ validate_base_runtime_whitelist() {
 	if [ -z "${whitelist_file}" ]; then
 		whitelist_file="${project_root}/config/base_runtime_whitelist.conf"
 		if [ ! -f "${whitelist_file}" ]; then
-			whitelist_file="${skill_root}/../config/base_runtime_whitelist.conf"
+			whitelist_file="${skill_root}/config/base_runtime_whitelist.conf"
 		fi
 	fi
 
