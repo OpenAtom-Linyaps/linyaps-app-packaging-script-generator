@@ -1,9 +1,9 @@
 ---
 name: bin2linyaps.constraints
 description: >
-  【linyaps-app-packaging-script-generator】通用构建约束的唯一权威。
-  承载本 workflow 全部 skills 共享的构建/校验约束，由 agent 在初始化阶段一次性载入，
-  各子 skill 引用本 SKILL 而非各自复述。
+  【linyaps-app-packaging-script-generator】的单一权威：构建约束 + 运行期操作契约。
+  承载本 workflow 全部 skills 共享的构建/校验约束与 agent 运行期操作规则，
+  由 agent 在初始化阶段一次性载入，各子 skill 与 agent 按路径引用本 SKILL 而非各自复述。
 user-invocable: false
 ---
 
@@ -45,3 +45,9 @@ user-invocable: false
 
 - `pak_linyaps.sh` 必须从模板**完整复制**，不得删除函数或脚本调用、不得简化 wrapper 生成逻辑。
 - 模板路径：`linglong.yaml` 源使用 `templates/linglong.yaml`，`files_res` 源使用 `templates/files_res`。
+
+## 7. 运行期操作契约
+- 入口必须解析并校验绝对 WORKSPACE_ROOT、agent_config_path、skills_root；output_dir/data_dir 使用已解析配置值；运行时禁止 ${tag} 或依赖日期生成的路径。
+- skills 固定位于 WORKSPACE_ROOT/skills/<name>/SKILL.md，无需搜索；禁止把仓库内 skill 当作可按名称解析的具名工具调用（运行时未注册，会报 "Tool skill not found"）。
+- 本 SKILL 为纯指引（无脚本）：agent 初始化读一次，后续按路径引用，不在各步骤重复展开。
+- 脚本调用使用相对 WORKSPACE_ROOT 或绝对路径，禁止 cd 切换工作目录后再执行。
