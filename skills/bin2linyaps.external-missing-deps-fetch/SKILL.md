@@ -39,6 +39,8 @@ user-invocable: false
 - 静态下载脚本：`scripts/download_missing_deps.sh`（由项目初始化时复制到项目 `scripts/` 目录）
 - 模板文件（待修改）：`<project_dir>/templates/linglong.yaml`
 - 生成文件：`<project_dir>/missing_deps_urls.conf`
+- `README.md`：人类入口文档（集成时序/fix协作/pak_linyaps集成/conf格式），详见「相关文档」
+- `reference/`：分主题参考文档，详见「相关文档」
 
 ## 输入
 
@@ -106,7 +108,11 @@ bash skills/bin2linyaps.external-missing-deps-fetch/scripts/fetch_missing_deps.s
 1. **目标文件确认**：脚本只修改 `<project_dir>/templates/linglong.yaml`，该文件包含 `${ll_version}` 等 envsubst 变量。
 2. **绝不修改 build_tmp 文件**：`build_tmp_dir/linglong.yaml` 是 `pak_linyaps.sh` 通过 `envsubst` 生成的瞬态副本，任何修改都会在下次构建时被覆盖。
 3. `missing_deps.*` 由 `ll-builder build` 在 `build_tmp_dir` 中生成，需通过 `--build-tmp-dir` 参数传入。
-4. 生成的 `missing_deps_urls.conf` 中的 URL 可人工编辑后重新运行 `download_missing_deps.sh`（位于项目 `scripts/` 目录下的静态脚本）。
-5. `download_missing_deps.sh` 默认解压到 `<project_dir>/binary_dir`，可通过位置参数指定目标目录。
-6. `download_missing_deps.sh` 是静态脚本，由项目初始化时复制到项目 `scripts/` 目录，不依赖 `fetch_missing_deps.sh` 是否执行过。用户手动创建 `missing_deps_urls.conf` 后，`pak_linyaps.sh` 可直接调用它下载解压。
-7. 多次运行会自动去重，不会重复追加已存在的包名。
+4. 多次运行会自动去重，不会重复追加已存在的包名。
+
+## 相关文档
+
+- [README.md](README.md)：人类入口文档（概述/快速开始/脚本说明/工作流程/设计决策/故障排除）
+- [端到端集成时序](reference/integration-timeline.md)：compat-testing → fetch → pak_linyaps 三阶段流水线时序
+- [与 pak_linyaps.sh 的集成](reference/pak_linyaps_integration.md)：调用点/非阻塞语义/libfix 衔接/人工编辑重跑
+- [missing_deps_urls.conf 格式规范](reference/missing_deps_urls_conf_format.md)：注释头/数组/百分号编码/加载机制
