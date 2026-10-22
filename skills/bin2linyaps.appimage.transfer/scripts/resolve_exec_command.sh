@@ -20,31 +20,31 @@ set -euo pipefail
 
 # 參數驗證
 if [ $# -lt 1 ]; then
-    echo "用法: $0 <squashfs_root_dir>" >&2
-    exit 1
+	echo "用法: $0 <squashfs_root_dir>" >&2
+	exit 1
 fi
 
 squashfs_root="$1"
 
 if [ ! -d "${squashfs_root}" ]; then
-    echo "錯誤: squashfs-root 目錄不存在: ${squashfs_root}" >&2
-    exit 1
+	echo "錯誤: squashfs-root 目錄不存在: ${squashfs_root}" >&2
+	exit 1
 fi
 
 # 查找 desktop 文件
 desktop_file=$(find "${squashfs_root}" -maxdepth 1 -name "*.desktop" -type f 2>/dev/null | head -1)
 
 if [ -z "${desktop_file}" ]; then
-    echo "錯誤: 未找到 desktop 文件" >&2
-    exit 1
+	echo "錯誤: 未找到 desktop 文件" >&2
+	exit 1
 fi
 
 # 提取 Exec= 字段
 exec_line=$(grep "^Exec=" "${desktop_file}" 2>/dev/null | head -1)
 
 if [ -z "${exec_line}" ]; then
-    echo "錯誤: desktop 文件中未找到 Exec= 字段" >&2
-    exit 1
+	echo "錯誤: desktop 文件中未找到 Exec= 字段" >&2
+	exit 1
 fi
 
 # 移除 "Exec=" 前綴
@@ -65,39 +65,39 @@ exec_cmd=$(echo "${exec_value}" | awk '{print $1}')
 
 # 如果是路徑，提取文件名
 if [[ "${exec_cmd}" == */* ]]; then
-    exec_cmd=$(basename "${exec_cmd}")
+	exec_cmd=$(basename "${exec_cmd}")
 fi
 
 # 驗證提取結果
 if [ -z "${exec_cmd}" ]; then
-    echo "錯誤: 無法從 Exec= 中提取命令" >&2
-    echo "  原始 Exec= 行: ${exec_line}" >&2
-    exit 1
+	echo "錯誤: 無法從 Exec= 中提取命令" >&2
+	echo "  原始 Exec= 行: ${exec_line}" >&2
+	exit 1
 fi
 
 # 檢查命令是否在 squashfs-root 中存在
 # 嘗試多種可能的路徑
 possible_paths=(
-    "${squashfs_root}/${exec_cmd}"
-    "${squashfs_root}/usr/bin/${exec_cmd}"
-    "${squashfs_root}/bin/${exec_cmd}"
+	"${squashfs_root}/${exec_cmd}"
+	"${squashfs_root}/usr/bin/${exec_cmd}"
+	"${squashfs_root}/bin/${exec_cmd}"
 )
 
 found=false
 for path in "${possible_paths[@]}"; do
-    if [ -e "${path}" ]; then
-        found=true
-        break
-    fi
+	if [ -e "${path}" ]; then
+		found=true
+		break
+	fi
 done
 
 if [ "${found}" = false ]; then
-    echo "警告: 提取的命令 '${exec_cmd}' 在 squashfs-root 中未找到" >&2
-    echo "  嘗試的路徑:" >&2
-    for path in "${possible_paths[@]}"; do
-        echo "    - ${path}" >&2
-    done
-    # 不退出，繼續返回結果（可能是符號連結或特殊情況）
+	echo "警告: 提取的命令 '${exec_cmd}' 在 squashfs-root 中未找到" >&2
+	echo "  嘗試的路徑:" >&2
+	for path in "${possible_paths[@]}"; do
+		echo "    - ${path}" >&2
+	done
+	# 不退出，繼續返回結果（可能是符號連結或特殊情況）
 fi
 
 echo "${exec_cmd}"

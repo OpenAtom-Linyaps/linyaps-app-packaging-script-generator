@@ -122,10 +122,10 @@ test_intra_dir_exact_exec() {
 }
 
 #------------------------------------------------------------------------------
-# 测试用例: 目录内去重 - 保留 NoDisplay=true
+# 测试用例: 目录内去重 - NoDisplay 与非 NoDisplay 分属不同组，互不去重
 #------------------------------------------------------------------------------
-test_intra_dir_nodisplay_kept() {
-    log_info "测试: 目录内去重 - NoDisplay=true 始终保留"
+test_intra_dir_nodisplay_different_group() {
+    log_info "测试: 目录内去重 - 不同 NoDisplay 组不去重"
 
     local target="${TEST_TMP_DIR}/nodisp"
     mkdir -p "${target}/share/applications"
@@ -135,10 +135,10 @@ test_intra_dir_nodisplay_kept() {
     TESTS_RUN=$((TESTS_RUN + 1))
     run_dedup "${target}"
     if file_exists "${target}/share/applications/a.desktop" && file_exists "${target}/share/applications/b.desktop"; then
-        log_success "NoDisplay=true 文件不参与去重，均保留"
+        log_success "不同 NoDisplay 组不去重，均保留"
         TESTS_PASSED=$((TESTS_PASSED + 1))
     else
-        log_error "NoDisplay=true 文件应始终保留"
+        log_error "不同 NoDisplay 组应均保留"
         TESTS_FAILED=$((TESTS_FAILED + 1))
     fi
 }
@@ -245,10 +245,10 @@ test_cross_no_ref_desktop() {
 }
 
 #------------------------------------------------------------------------------
-# 测试用例: 跨目录 - binary 中 NoDisplay=true 始终保留
+# 测试用例: 跨目录 - NoDisplay 组隔离（NoDisplay target 无 NoDisplay ref 时保留）
 #------------------------------------------------------------------------------
-test_cross_nodisplay_always_kept() {
-    log_info "测试: 跨目录 - binary 中 NoDisplay=true 始终保留"
+test_cross_nodisplay_group_isolation() {
+    log_info "测试: 跨目录 - NoDisplay 组隔离，不同组互不比较"
 
     local target="${TEST_TMP_DIR}/cross_nodisp"
     local ref="${TEST_TMP_DIR}/cross_nodisp_ref"
@@ -262,10 +262,10 @@ test_cross_nodisplay_always_kept() {
     TESTS_RUN=$((TESTS_RUN + 1))
     run_dedup "${target}" --reference-dir "${ref}"
     if file_exists "${target}/share/applications/a.desktop" && [ ! -f "${target}/share/applications/b.desktop" ]; then
-        log_success "binary 中 NoDisplay=true 保留，非 NoDisplay 删除"
+        log_success "NoDisplay target 在无 NoDisplay ref 时保留，非 NoDisplay target 在有同组 ref 时删除"
         TESTS_PASSED=$((TESTS_PASSED + 1))
     else
-        log_error "binary 中 NoDisplay=true 应保留，非 NoDisplay 应删除"
+        log_error "NoDisplay 组隔离失败"
         TESTS_FAILED=$((TESTS_FAILED + 1))
     fi
 }
@@ -326,6 +326,256 @@ test_extract_exec_command_full_value() {
 }
 
 #------------------------------------------------------------------------------
+# 测试用例: 目录内去重 - NoDisplay 组内去重（同组同 Exec 去重）
+#------------------------------------------------------------------------------
+test_intra_dir_nodisplay_dedup_within_group() {
+    log_info "测试: 目录内去重 - NoDisplay 组内同 Exec 去重"
+
+    local target="${TEST_TMP_DIR}/nodisp_dedup"
+    mkdir -p "${target}/share/applications"
+    mkdesktop "${target}/share/applications/a.desktop" "/usr/bin/handler %U" "true"
+    mkdesktop "${target}/share/applications/b.desktop" "/usr/bin/handler %U" "true"
+
+    TESTS_RUN=$((TESTS_RUN + 1))
+    run_dedup "${target}"
+    if [ "$(desktop_count "${target}/share/applications")" -eq 1 ]; then
+        log_success "NoDisplay 组内同 Exec 去重为 1 份"
+        TESTS_PASSED=$((TESTS_PASSED + 1))
+    else
+        log_error "NoDisplay 组内同 Exec 应去重为 1 份"
+        TESTS_FAILED=$((TESTS_FAILED + 1))
+    fi
+}
+
+#------------------------------------------------------------------------------
+# 测试用例: 跨目录 - 权威模式仅删除 Exec 匹配的同组文件，保留 Exec 不匹配的
+#------------------------------------------------------------------------------
+test_cross_authoritative_preserves_non_matching_exec() {
+    log_info "测试: 跨目录权威 - 仅删除 Exec 匹配，保留 Exec 不匹配"
+
+    local target="${TEST_TMP_DIR}/cross_preserve"
+    local ref="${TEST_TMP_DIR}/cross_preserve_ref"
+    mkdir -p "${target}/share/applications"
+    mkdir -p "${ref}/share/applications"
+    touch "${target}/app1"
+    mkdesktop "${ref}/share/applications/app.desktop" "/usr/bin/app1"
+    mkdesktop "${target}/share/applications/a.desktop" "/usr/bin/app1"
+    mkdesktop "${target}/share/applications/b.desktop" "/usr/bin/app2"
+
+    TESTS_RUN=$((TESTS_RUN + 1))
+    run_dedup "${target}" --reference-dir "${ref}"
+    if [ ! -f "${target}/share/applications/a.desktop" ] && file_exists "${target}/share/applications/b.desktop"; then
+        log_success "Exec 匹配的删除，Exec 不匹配的保留"
+        TESTS_PASSED=$((TESTS_PASSED + 1))
+    else
+        log_error "应仅删除 Exec 匹配的，保留 Exec 不匹配的"
+        TESTS_FAILED=$((TESTS_FAILED + 1))
+    fi
+}
+
+#------------------------------------------------------------------------------
+# 测试用例: 跨目录 - 合并 binary/ 缺失的本地化 Name 字段到 files_res/
+#------------------------------------------------------------------------------
+test_cross_merge_localized_names() {
+    log_info "测试: 跨目录 - 合并 binary/ 缺失的本地化 Name 字段"
+
+    local target="${TEST_TMP_DIR}/merge_loc"
+    local ref="${TEST_TMP_DIR}/merge_loc_ref"
+    mkdir -p "${target}/share/applications"
+    mkdir -p "${ref}/share/applications"
+    touch "${target}/app"
+    # files_res/ 模板：只有 Name + Name[zh_CN]
+    {
+        echo "[Desktop Entry]"
+        echo "Name=app"
+        echo "Name[zh_CN]=应用"
+        echo "Exec=/usr/bin/app"
+        echo "Icon=app"
+    } > "${ref}/share/applications/app.desktop"
+    # binary/：有 Name[zh_TW]、Name[ja]、Comment[ja]
+    {
+        echo "[Desktop Entry]"
+        echo "Name=app"
+        echo "Name[zh_CN]=应用"
+        echo "Name[zh_TW]=應用"
+        echo "Name[ja]=アプリ"
+        echo "Comment[ja]=計算機"
+        echo "Exec=/usr/bin/app"
+        echo "Icon=app"
+    } > "${target}/share/applications/a.desktop"
+
+    TESTS_RUN=$((TESTS_RUN + 1))
+    run_dedup "${target}" --reference-dir "${ref}"
+    # files_res/ 文件应合并 Name[zh_TW]、Name[ja]、Comment[ja]
+    if grep -q "^Name\[zh_TW\]=應用$" "${ref}/share/applications/app.desktop" \
+       && grep -q "^Name\[ja\]=アプリ$" "${ref}/share/applications/app.desktop" \
+       && grep -q "^Comment\[ja\]=計算機$" "${ref}/share/applications/app.desktop"; then
+        log_success "binary/ 缺失的本地化字段已合并到 files_res/"
+        TESTS_PASSED=$((TESTS_PASSED + 1))
+    else
+        log_error "应合并 binary/ 缺失的本地化字段到 files_res/"
+        TESTS_FAILED=$((TESTS_FAILED + 1))
+    fi
+}
+
+#------------------------------------------------------------------------------
+# 测试用例: 跨目录 - files_res/ 已有字段保留不变（不追加 binary/ 同 key 值）
+#------------------------------------------------------------------------------
+test_cross_merge_existing_field_preserved() {
+    log_info "测试: 跨目录 - files_res/ 已有字段保留不变"
+
+    local target="${TEST_TMP_DIR}/merge_keep"
+    local ref="${TEST_TMP_DIR}/merge_keep_ref"
+    mkdir -p "${target}/share/applications"
+    mkdir -p "${ref}/share/applications"
+    touch "${target}/app"
+    # files_res/ 已有 Comment=Template
+    {
+        echo "[Desktop Entry]"
+        echo "Name=app"
+        echo "Comment=Template"
+        echo "Exec=/usr/bin/app"
+        echo "Icon=app"
+    } > "${ref}/share/applications/app.desktop"
+    # binary/ 有 Comment=Binary（同 key，应不覆盖）
+    {
+        echo "[Desktop Entry]"
+        echo "Name=app"
+        echo "Comment=Binary"
+        echo "Exec=/usr/bin/app"
+        echo "Icon=app"
+    } > "${target}/share/applications/a.desktop"
+
+    TESTS_RUN=$((TESTS_RUN + 1))
+    run_dedup "${target}" --reference-dir "${ref}"
+    if grep -q "^Comment=Template$" "${ref}/share/applications/app.desktop" \
+       && ! grep -q "^Comment=Binary$" "${ref}/share/applications/app.desktop"; then
+        log_success "files_res/ 已有字段值保留不变"
+        TESTS_PASSED=$((TESTS_PASSED + 1))
+    else
+        log_error "files_res/ 已有字段应保留不变"
+        TESTS_FAILED=$((TESTS_FAILED + 1))
+    fi
+}
+
+#------------------------------------------------------------------------------
+# 测试用例: 跨目录 - binary/ 有 [Desktop Action] 段而 files_res/ 没有 → 整段追加
+#------------------------------------------------------------------------------
+test_cross_merge_desktop_action_section() {
+    log_info "测试: 跨目录 - 合并 [Desktop Action] 段"
+
+    local target="${TEST_TMP_DIR}/merge_action"
+    local ref="${TEST_TMP_DIR}/merge_action_ref"
+    mkdir -p "${target}/share/applications"
+    mkdir -p "${ref}/share/applications"
+    touch "${target}/app"
+    {
+        echo "[Desktop Entry]"
+        echo "Name=app"
+        echo "Exec=/usr/bin/app"
+        echo "Icon=app"
+    } > "${ref}/share/applications/app.desktop"
+    {
+        echo "[Desktop Entry]"
+        echo "Name=app"
+        echo "Exec=/usr/bin/app"
+        echo "Icon=app"
+        echo ""
+        echo "[Desktop Action new-window]"
+        echo "Name=New Window"
+        echo "Exec=/usr/bin/app --new-window"
+    } > "${target}/share/applications/a.desktop"
+
+    TESTS_RUN=$((TESTS_RUN + 1))
+    run_dedup "${target}" --reference-dir "${ref}"
+    if grep -q "^\[Desktop Action new-window\]$" "${ref}/share/applications/app.desktop" \
+       && grep -q "^Name=New Window$" "${ref}/share/applications/app.desktop" \
+       && grep -q "^Exec=/usr/bin/app --new-window$" "${ref}/share/applications/app.desktop"; then
+        log_success "[Desktop Action] 段已整段追加到 files_res/"
+        TESTS_PASSED=$((TESTS_PASSED + 1))
+    else
+        log_error "应整段追加 [Desktop Action] 段到 files_res/"
+        TESTS_FAILED=$((TESTS_FAILED + 1))
+    fi
+}
+
+#------------------------------------------------------------------------------
+# 测试用例: 跨目录 - binary/ 所有字段 files_res/ 都有 → 无追加，正常删除
+#------------------------------------------------------------------------------
+test_cross_merge_no_fields_to_merge() {
+    log_info "测试: 跨目录 - binary/ 字段与 files_res/ 完全一致，无追加"
+
+    local target="${TEST_TMP_DIR}/merge_none"
+    local ref="${TEST_TMP_DIR}/merge_none_ref"
+    mkdir -p "${target}/share/applications"
+    mkdir -p "${ref}/share/applications"
+    touch "${target}/app"
+    # 两个文件内容完全一致
+    {
+        echo "[Desktop Entry]"
+        echo "Name=app"
+        echo "Comment=hello"
+        echo "Exec=/usr/bin/app"
+        echo "Icon=app"
+    } > "${ref}/share/applications/app.desktop"
+    cp "${ref}/share/applications/app.desktop" "${target}/share/applications/a.desktop"
+
+    TESTS_RUN=$((TESTS_RUN + 1))
+    run_dedup "${target}" --reference-dir "${ref}"
+    # binary/ 文件应被删除
+    if [ ! -f "${target}/share/applications/a.desktop" ]; then
+        log_success "无追加字段时正常删除 binary/ 文件"
+        TESTS_PASSED=$((TESTS_PASSED + 1))
+    else
+        log_error "无追加字段时应正常删除 binary/ 文件"
+        TESTS_FAILED=$((TESTS_FAILED + 1))
+    fi
+}
+
+#------------------------------------------------------------------------------
+# 测试用例: 跨目录 - binary/ 字段是 files_res/ 子集 → 无追加
+#------------------------------------------------------------------------------
+test_cross_merge_no_binary_extra_fields() {
+    log_info "测试: 跨目录 - binary/ 字段是 files_res/ 子集，无追加"
+
+    local target="${TEST_TMP_DIR}/merge_subset"
+    local ref="${TEST_TMP_DIR}/merge_subset_ref"
+    mkdir -p "${target}/share/applications"
+    mkdir -p "${ref}/share/applications"
+    touch "${target}/app"
+    # files_res/ 有 Comment、Categories（binary/ 没有）
+    {
+        echo "[Desktop Entry]"
+        echo "Name=app"
+        echo "Comment=hello"
+        echo "Categories=Utility;"
+        echo "Exec=/usr/bin/app"
+        echo "Icon=app"
+    } > "${ref}/share/applications/app.desktop"
+    # binary/ 是子集
+    {
+        echo "[Desktop Entry]"
+        echo "Name=app"
+        echo "Exec=/usr/bin/app"
+        echo "Icon=app"
+    } > "${target}/share/applications/a.desktop"
+
+    TESTS_RUN=$((TESTS_RUN + 1))
+    run_dedup "${target}" --reference-dir "${ref}"
+    # files_res/ 文件内容不应变化（无追加）
+    local before_lines
+    before_lines=$(grep -c "^" "${ref}/share/applications/app.desktop")
+    # binary/ 应被删除
+    if [ ! -f "${target}/share/applications/a.desktop" ] && [ "${before_lines}" -eq 6 ]; then
+        log_success "binary/ 子集时无追加，正常删除"
+        TESTS_PASSED=$((TESTS_PASSED + 1))
+    else
+        log_error "binary/ 子集时应无追加并正常删除"
+        TESTS_FAILED=$((TESTS_FAILED + 1))
+    fi
+}
+
+#------------------------------------------------------------------------------
 # 主函数
 #------------------------------------------------------------------------------
 main() {
@@ -339,13 +589,20 @@ main() {
     # 执行测试
     test_extract_exec_command_full_value
     test_intra_dir_exact_exec
-    test_intra_dir_nodisplay_kept
+    test_intra_dir_nodisplay_different_group
+    test_intra_dir_nodisplay_dedup_within_group
     test_cross_authoritative_exec_in_binary
     test_cross_authoritative_exec_in_files_res
+    test_cross_authoritative_preserves_non_matching_exec
     test_cross_fallback_exec_missing
     test_cross_no_ref_desktop
-    test_cross_nodisplay_always_kept
+    test_cross_nodisplay_group_isolation
     test_cross_real_deb_quoted_deep_path
+    test_cross_merge_localized_names
+    test_cross_merge_existing_field_preserved
+    test_cross_merge_desktop_action_section
+    test_cross_merge_no_fields_to_merge
+    test_cross_merge_no_binary_extra_fields
 
     teardown
 

@@ -13,7 +13,7 @@
 #=============================================================================
 
 srcType="appimage"
-templateVer="2026.9.14.1"
+templateVer="2026.10.22.1"
 
 set -x
 
@@ -311,7 +311,7 @@ validate_src_path() {
 	local file_output
 	file_output=$(file "${src_path}")
 	case "${file_output}" in
-	*"ELF"*|*"AppImage"*)
+	*"ELF"* | *"AppImage"*)
 		echo "驗證通過: src_path='${src_path}'"
 		return 0
 		;;
@@ -591,6 +591,12 @@ build_pak() {
 	#       AppRun 是 AppImage 的標準入口，最可靠
 	#       resolve_exec_command.sh 作為 fallback，防止 AppRun 缺失
 	local wrapper_target=""
+	# 记录 binary_name 是否为用户原始指定（非自动检测）
+	# 用于 desktop Exec 替换的优先级2判定
+	local binary_name_is_original=false
+	if [ -n "${binary_name}" ]; then
+		binary_name_is_original=true
+	fi
 
 	# 1. 顯式指定的 binary_name（最高優先級）
 	#    在解壓目錄中按 binary_name find 唯一可執行文件（-maxdepth 3 -type f）
@@ -705,55 +711,80 @@ WRAPPER_EOF
 	fi
 
 	# 更新 desktop 文件的 Exec= 字段
-	# 替換所有 desktop 的 Exec= 為 wrapper
+	# 优先级匹配规则：
+	#   优先级1: Exec 行包含 binary_name 或 wrapper_target → 替换为 wrapper
+	#   优先级2: binary_name 来自原始配置且 exec_bin_name 存在于 binary_dir → 强制替换
+	#   未匹配: 不替换
+	local desktop_updated=0
 	for desktop_file in $(find "${build_tmp_dir}" -name "*.desktop" -type f 2>/dev/null); do
-		# 處理 env 前綴（如 Exec=env VAR=val binary args）
-		# 移除 env 前綴，將第一個二進制參數替換為 wrapper，保留其餘參數
-		while IFS= read -r exec_line; do
-			[ -z "${exec_line}" ] && continue
-			# 提取 Exec= 後的完整值
-			exec_value="${exec_line#Exec=}"
-			# 移除 env VAR=val 前綴（支持多個 KEY=VALUE 環境變數）
-			exec_value=$(echo "${exec_value}" | sed 's/^env \(\S*=\S*\s\)*//')
-			# 提取第一個參數（二進制名/路徑）和其餘參數
-			exec_bin=$(echo "${exec_value}" | awk '{print $1}')
-			exec_args=$(echo "${exec_value}" | awk '{$1=""; print $0}' | sed 's/^ //')
-			# 若檢測到有風險的腳本，過濾掉非 freedesktop 佔位符參數
-			# 防止 --no-sandbox 等參數通過 desktop 文件流入腳本的 $1
-			if [ "${has_risk}" = "true" ] && [ -n "${exec_args}" ]; then
-				local filtered_args=""
-				for arg in ${exec_args}; do
-					case "${arg}" in
-						%[UuFfickDdNn])
-							filtered_args="${filtered_args} ${arg}"
-							;;
-						*)
-							echo "  過濾掉風險參數: ${arg}"
-							;;
-					esac
-				done
-				exec_args="${filtered_args# }"
+		local tmp_file="${desktop_file}.tmp"
+		>"${tmp_file}"
+		local file_updated=false
+		while IFS= read -r line; do
+			if [[ "${line}" == Exec=* ]]; then
+				exec_value="${line#Exec=}"
+				# 移除 env VAR=val 前缀
+				exec_value=$(echo "${exec_value}" | sed 's/^env \(\S*=\S*\s\)*//')
+				exec_bin_path=$(echo "${exec_value}" | awk '{print $1}')
+				exec_bin_name=$(basename "${exec_bin_path}")
+				exec_args=$(echo "${exec_value}" | awk '{$1=""; print $0}' | sed 's/^ //')
+
+				local do_replace=false
+
+				# 优先级1: Exec 行包含 binary_name 或 wrapper_target → 替换为 wrapper
+				# 防护：binary_name 和 wrapper_target 均为空时 grep -qF "" 匹配所有行，需守卫
+				if [ -n "${binary_name}" ] && echo "${exec_value}" | grep -qF "${binary_name}"; then
+					do_replace=true
+				elif [ -n "${wrapper_target}" ] && echo "${exec_value}" | grep -qF "${wrapper_target}"; then
+					do_replace=true
+				fi
+				# 优先级2: binary_name 来自原始配置且 exec_bin_name 也存在于 binary_dir → 强制替换
+				if [ "${do_replace}" = false ] && [ "${binary_name_is_original}" = true ]; then
+					if find "${binary_dir}" -type f -name "${exec_bin_name}" 2>/dev/null | grep -q .; then
+						do_replace=true
+					fi
+				fi
+
+				if [ "${do_replace}" = true ]; then
+					# 若检测到有风险的脚本，过滤掉非 freedesktop 占位符参数
+					if [ "${has_risk}" = "true" ] && [ -n "${exec_args}" ]; then
+						local filtered_args=""
+						for arg in ${exec_args}; do
+							case "${arg}" in
+							%[UuFfickDdNn])
+								filtered_args="${filtered_args} ${arg}"
+								;;
+							*)
+								echo "  过滤掉风险参数: ${arg}"
+								;;
+							esac
+						done
+						exec_args="${filtered_args# }"
+					fi
+					new_exec="Exec=${exec_target}"
+					if [ -n "${exec_args}" ]; then
+						new_exec="${new_exec} ${exec_args}"
+					fi
+					echo "${new_exec}" >>"${tmp_file}"
+					file_updated=true
+				else
+					echo "${line}" >>"${tmp_file}"
+				fi
+			else
+				echo "${line}" >>"${tmp_file}"
 			fi
-			# 替換為 wrapper
-			new_exec="Exec=${exec_target}"
-			if [ -n "${exec_args}" ]; then
-				new_exec="${new_exec} ${exec_args}"
-			fi
-			# 在文件中替換該行
-            # 逐行替换完整 Exec 行，避免原始命令中的 sed 特殊字符破坏替换。
-            local tmp_exec_file="${desktop_file}.tmp"
-            > "${tmp_exec_file}"
-            while IFS= read -r line; do
-                if [[ "${line}" == "${exec_line}" ]]; then
-                    printf '%s\n' "${new_exec}" >> "${tmp_exec_file}"
-                else
-                    printf '%s\n' "${line}" >> "${tmp_exec_file}"
-                fi
-            done < "${desktop_file}"
-            mv "${tmp_exec_file}" "${desktop_file}"
-		done < <(grep "^Exec=" "${desktop_file}")
-		echo "Updated Exec= in: ${desktop_file} (wrapper: ${exec_target})"
+		done <"${desktop_file}"
+		if [ "${file_updated}" = true ]; then
+			mv "${tmp_file}" "${desktop_file}"
+			echo "Updated Exec= in: ${desktop_file}"
+			desktop_updated=$((desktop_updated + 1))
+		else
+			rm -f "${tmp_file}"
+		fi
 	done
+	if [ "${desktop_updated}" -eq 0 ]; then
+		echo "[Warning] No desktop files were updated with wrapper Exec. Verify binary_name/wrapper_target and desktop file Exec entries."
+	fi
 
 	# 注入 base/runtime 到 linglong.yaml（延遲注入，支援 CLI 參數動態覆蓋）
 	# 模板中 base/runtime 為空佔位符 ""，由 sed 在構建時動態寫入

@@ -391,7 +391,7 @@ ls bins/
 
 `pak_linyaps.sh` 是各 skill 的核心构建脚本，其 `build_pak()` 函数按以下顺序执行：
 
-1. **资源处理**：复制 desktop/icon 文件，去重，修复路径
+1. **资源处理**：复制 desktop/icon 文件，Exec 两优先级匹配替换为 wrapper（优先级1: Exec 含 binary_name/wrapper_target；优先级2: binary_name 来自原始配置且 exec_bin_name 存在于 binary_dir），跨目录去重（删除前合并 binary/ 字段到 files_res/），修复路径
 2. **Wrapper 创建**：生成 wrapper 脚本处理原始目录结构
 3. **嵌套路径修复**：`validate_bin_nesting.sh` 修复 `binary/bin/bin/` 嵌套问题
 4. **非标准库软链修复**：`handle_special_paths.sh --phase=libfix` 为非标准目录及多架构子目录的 `.so` 创建软链（含 SONAME 补全）

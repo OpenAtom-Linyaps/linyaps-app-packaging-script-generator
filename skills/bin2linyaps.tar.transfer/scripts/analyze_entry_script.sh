@@ -21,35 +21,35 @@ set -euo pipefail
 
 # 輸出 JSON 並退出
 output_and_exit() {
-    local is_script="$1"
-    local has_params="$2"
+	local is_script="$1"
+	local has_params="$2"
 
-    if [ "${is_script}" = "true" ] && [ "${has_params}" = "true" ]; then
-        local risk_level="high"
-        local exit_code=0
-    else
-        local risk_level="low"
-        local exit_code=1
-    fi
+	if [ "${is_script}" = "true" ] && [ "${has_params}" = "true" ]; then
+		local risk_level="high"
+		local exit_code=0
+	else
+		local risk_level="low"
+		local exit_code=1
+	fi
 
-    cat <<JSON_EOF
+	cat <<JSON_EOF
 {"is_script":${is_script},"has_positional_params":${has_params},"risk_level":"${risk_level}"}
 JSON_EOF
-    exit "${exit_code}"
+	exit "${exit_code}"
 }
 
 # 參數驗證
 if [ $# -lt 1 ]; then
-    echo "用法: $0 <target_file>" >&2
-    output_and_exit "false" "false"
+	echo "用法: $0 <target_file>" >&2
+	output_and_exit "false" "false"
 fi
 
 target_file="$1"
 
 # 檢查文件是否存在
 if [ ! -f "${target_file}" ]; then
-    echo "錯誤: 文件不存在: ${target_file}" >&2
-    output_and_exit "false" "false"
+	echo "錯誤: 文件不存在: ${target_file}" >&2
+	output_and_exit "false" "false"
 fi
 
 # Step 1: 判斷是否為腳本文件（shell script, python, perl 等）
@@ -59,29 +59,29 @@ file_output=$(file "${target_file}" 2>/dev/null || echo "")
 
 case "${file_output}" in
 *"script"* | *"text"*)
-    is_script="true"
-    ;;
+	is_script="true"
+	;;
 *"ELF"*)
-    # ELF 二進制，不是腳本
-    output_and_exit "false" "false"
-    ;;
+	# ELF 二進制，不是腳本
+	output_and_exit "false" "false"
+	;;
 *)
-    # 無法確定的文件類型（可能是二進制或未知格式）
-    # 嘗試讀取文件頭判斷是否為 shebang 腳本
-    if [ -r "${target_file}" ]; then
-        first_line=$(head -1 "${target_file}" 2>/dev/null || echo "")
-        case "${first_line}" in
-        "#!"*)
-            is_script="true"
-            ;;
-        *)
-            output_and_exit "false" "false"
-            ;;
-        esac
-    else
-        output_and_exit "false" "false"
-    fi
-    ;;
+	# 無法確定的文件類型（可能是二進制或未知格式）
+	# 嘗試讀取文件頭判斷是否為 shebang 腳本
+	if [ -r "${target_file}" ]; then
+		first_line=$(head -1 "${target_file}" 2>/dev/null || echo "")
+		case "${first_line}" in
+		"#!"*)
+			is_script="true"
+			;;
+		*)
+			output_and_exit "false" "false"
+			;;
+		esac
+	else
+		output_and_exit "false" "false"
+	fi
+	;;
 esac
 
 # Step 2: 檢測是否使用了 $1-$9 位置參數
@@ -95,13 +95,13 @@ esac
 has_params="false"
 
 if [ "${is_script}" = "true" ] && [ -r "${target_file}" ]; then
-    # 使用 grep 搜索位置參數模式
-    # - 排除以 # 開頭的註解行
-    # - 只匹配 $1-$9 和 ${1}-${9}
-    # - 不匹配 $0, $@, $*
-    if grep -vE '^\s*#' "${target_file}" 2>/dev/null | grep -qE '(^|[^$])\$\{?[1-9]\}?'; then
-        has_params="true"
-    fi
+	# 使用 grep 搜索位置參數模式
+	# - 排除以 # 開頭的註解行
+	# - 只匹配 $1-$9 和 ${1}-${9}
+	# - 不匹配 $0, $@, $*
+	if grep -vE '^\s*#' "${target_file}" 2>/dev/null | grep -qE '(^|[^$])\$\{?[1-9]\}?'; then
+		has_params="true"
+	fi
 fi
 
 # 輸出結果

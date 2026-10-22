@@ -111,8 +111,7 @@ parse_args() {
 	local positional=()
 	for arg in "$@"; do
 		case "${arg}" in
-		--phase=* | --verbose)
-			;;
+		--phase=* | --verbose) ;;
 		*)
 			positional+=("${arg}")
 			;;

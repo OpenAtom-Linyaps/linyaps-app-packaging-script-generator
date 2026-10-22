@@ -21,21 +21,21 @@ set -euo pipefail
 
 # 參數驗證
 if [ $# -lt 2 ]; then
-    echo "用法: $0 <search_root_dir> <binary_name>" >&2
-    exit 1
+	echo "用法: $0 <search_root_dir> <binary_name>" >&2
+	exit 1
 fi
 
 search_root="$1"
 binary_name="$2"
 
 if [ -z "${binary_name}" ]; then
-    echo "錯誤: binary_name 為空" >&2
-    exit 1
+	echo "錯誤: binary_name 為空" >&2
+	exit 1
 fi
 
 if [ ! -d "${search_root}" ]; then
-    echo "錯誤: 搜索根目錄不存在: ${search_root}" >&2
-    exit 1
+	echo "錯誤: 搜索根目錄不存在: ${search_root}" >&2
+	exit 1
 fi
 
 # binary_name 可能是相對路徑（如 usr/bin/shotcut）或文件名（如 shotcut）
@@ -62,16 +62,16 @@ matches=$(find "${search_root}" -maxdepth 3 -type f -name "${binary_name}" -perm
 count=$(printf '%s\n' "${matches}" | grep -c '^/' || true)
 
 if [ "${count}" -eq 1 ]; then
-    # 唯一命中，輸出相對路徑
-    rel_path="${matches#${search_root}/}"
-    echo "${rel_path}"
-    exit 0
+	# 唯一命中，輸出相對路徑
+	rel_path="${matches#${search_root}/}"
+	echo "${rel_path}"
+	exit 0
 fi
 
 if [ "${count}" -gt 1 ]; then
-    echo "錯誤: binary_name '${binary_name}' 匹配到多個可執行文件（${count} 個），無法唯一確定:" >&2
-    printf '%s\n' "${matches}" | sed "s|^|    |" >&2
-    exit 1
+	echo "錯誤: binary_name '${binary_name}' 匹配到多個可執行文件（${count} 個），無法唯一確定:" >&2
+	printf '%s\n' "${matches}" | sed "s|^|    |" >&2
+	exit 1
 fi
 
 echo "錯誤: binary_name '${binary_name}' 在 ${search_root}（depth≤3）未找到可執行文件" >&2

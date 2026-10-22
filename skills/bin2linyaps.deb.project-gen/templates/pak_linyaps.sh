@@ -3,7 +3,7 @@
 set -x
 
 srcType="deb"
-templateVer="2026.9.14.1"
+templateVer="2026.10.22.1"
 
 # 默認 base/runtime 配置（可通過命令行參數覆蓋）
 DEFAULT_BASE_ID="org.deepin.base"
@@ -938,7 +938,7 @@ WRAPPER_EOF
 			local desktop_updated=0
 			for desktop_file in $(find "${build_tmp_dir}" -name "*.desktop" -type f 2>/dev/null); do
 				local tmp_file="${desktop_file}.tmp"
-				> "${tmp_file}"
+				>"${tmp_file}"
 				local file_updated=false
 				while IFS= read -r line; do
 					if [[ "${line}" == Exec=* ]]; then
@@ -951,10 +951,17 @@ WRAPPER_EOF
 
 						local do_replace=false
 
-                        # wrapper 已由当前构建流程成功创建；统一回写所有有效 desktop Exec，
-                        # 避免复杂命令（如 bash -c、sed、引号和管道）导致 binary_name 匹配失效。
-                        # 仍保留 Exec 的参数字段，并由 wrapper 原样接收。
-                        local do_replace=true
+						# 优先级1: Exec 行包含 binary_name → 替换为 wrapper
+						if echo "${exec_value}" | grep -qF "${binary_name}"; then
+							do_replace=true
+						fi
+
+						# 优先级2: binary_name 来自 CSV 原始配置且 exec_bin_name 也存在于 binary_dir → 强制替换
+						if [ "${do_replace}" = false ] && [ "${binary_name_is_original}" = true ]; then
+							if find "${binary_dir}" -type f -name "${exec_bin_name}" 2>/dev/null | grep -q .; then
+								do_replace=true
+							fi
+						fi
 
 						if [ "${do_replace}" = true ]; then
 							# 若检测到有风险的脚本，过滤掉非 freedesktop 占位符参数
@@ -962,12 +969,12 @@ WRAPPER_EOF
 								local filtered_args=""
 								for arg in ${exec_args}; do
 									case "${arg}" in
-										%[UuFfickDdNn])
-											filtered_args="${filtered_args} ${arg}"
-											;;
-										*)
-											echo "  过滤掉风险参数: ${arg}"
-											;;
+									%[UuFfickDdNn])
+										filtered_args="${filtered_args} ${arg}"
+										;;
+									*)
+										echo "  过滤掉风险参数: ${arg}"
+										;;
 									esac
 								done
 								exec_args="${filtered_args# }"
@@ -976,15 +983,15 @@ WRAPPER_EOF
 							if [ -n "${exec_args}" ]; then
 								new_exec="${new_exec} ${exec_args}"
 							fi
-							echo "${new_exec}" >> "${tmp_file}"
+							echo "${new_exec}" >>"${tmp_file}"
 							file_updated=true
 						else
-							echo "${line}" >> "${tmp_file}"
+							echo "${line}" >>"${tmp_file}"
 						fi
 					else
-						echo "${line}" >> "${tmp_file}"
+						echo "${line}" >>"${tmp_file}"
 					fi
-				done < "${desktop_file}"
+				done <"${desktop_file}"
 				if [ "${file_updated}" = true ]; then
 					mv "${tmp_file}" "${desktop_file}"
 					echo "Updated Exec= in: ${desktop_file}"
