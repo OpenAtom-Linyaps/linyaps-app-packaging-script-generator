@@ -42,6 +42,10 @@ NC='\033[0m' # No Color
 # 全局变量
 VERBOSE=false
 PHASE="paths"
+
+# 为 true 时保留原始文件名/目录名（不做特殊字符标准化）。
+# 某些二进制内部硬编码了不规范文件名，强制改名会导致其无法识别（disable fallback）。
+SKIP_NORMALIZE=false
 SRC_DIR=""
 DEST_DIR=""
 PATH_MAPPING_FILE=""
@@ -88,6 +92,7 @@ usage() {
 	echo "  src_dir   - deb 包解压后的源目录"
 	echo "  dest_dir  - 目标目录（paths）或 binary 目录（libfix）"
 	echo "  --verbose - 显示详细日志"
+	echo "  --skip_normalize - 跳过文件名/目录名标准化，原样保留特殊字符（保留原名，disable fallback）"
 	echo ""
 	echo "示例:"
 	echo "  $0 --phase=paths /tmp/build/tmp /tmp/build/binary"
@@ -104,6 +109,9 @@ parse_args() {
 		--verbose)
 			VERBOSE=true
 			;;
+		--skip_normalize)
+			SKIP_NORMALIZE=true
+			;;
 		esac
 	done
 
@@ -111,7 +119,7 @@ parse_args() {
 	local positional=()
 	for arg in "$@"; do
 		case "${arg}" in
-		--phase=* | --verbose) ;;
+		--phase=* | --verbose | --skip_normalize) ;;
 		*)
 			positional+=("${arg}")
 			;;
@@ -159,6 +167,12 @@ parse_args() {
 # pak_linyaps.sh 的 shell_escape() 负责转义。
 normalize_dirname() {
 	local original_name="$1"
+
+	# disable fallback：跳过特殊字符标准化，原样保留原始名称
+	if [ "${SKIP_NORMALIZE}" = "true" ]; then
+		echo "${original_name}"
+		return 0
+	fi
 	local normalized_name="${original_name}"
 
 	# 检查是否需要标准化
@@ -223,6 +237,12 @@ normalize_dirname() {
 # 标准化文件名（与目录名使用相同的逻辑；非 ASCII 字符原样保留）
 normalize_filename() {
 	local original_name="$1"
+
+	# disable fallback：跳过特殊字符标准化，原样保留原始名称
+	if [ "${SKIP_NORMALIZE}" = "true" ]; then
+		echo "${original_name}"
+		return 0
+	fi
 	local normalized_name="${original_name}"
 
 	# 检查是否需要标准化

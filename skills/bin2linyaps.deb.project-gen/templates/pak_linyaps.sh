@@ -3,7 +3,7 @@
 set -x
 
 srcType="deb"
-templateVer="2026.10.22.1"
+templateVer="2026.10.26.1"
 
 # 默認 base/runtime 配置（可通過命令行參數覆蓋）
 DEFAULT_BASE_ID="org.deepin.base"
@@ -30,6 +30,9 @@ auto_clean="false"
 auto_push="${push}"
 ## 额外构建参数，原样追加到 ll-builder build（默认含 --skip-output-check）
 build_extra_args="--skip-output-check"
+
+# 为 true 时跳过特殊路径文件名标准化（保留原始文件名，disable fallback）
+skip_special_paths="false"
 
 repo_name="nightly"
 repo_url="https://repo-dev.cicd.getdeepin.org"
@@ -116,6 +119,9 @@ init_global_data() {
 			;;
 		--nested_script)
 			nested_script="$val"
+			;;
+		--skip_special_paths)
+			skip_special_paths="$val"
 			;;
 		esac
 	done
@@ -692,7 +698,12 @@ build_pak() {
 	#    例如：/opt/uTools/ -> binary/uTools/ (去掉 opt/ 层级)
 	# 3. 支持包含空格、括号、中文、&、@、#、$ 等特殊字符的路径
 	# 注意：此操作必须在所有软链动作之前完成，否则软链关系将被破坏
-	"${project_root}/scripts/handle_special_paths.sh" --phase=paths "${binary_tmp_dir}" "${binary_dir}"
+	# --skip_special_paths=true 时禁用文件名标准化（disable fallback），保留原始文件名
+	local sp_args=()
+	if [ "${skip_special_paths}" = "true" ]; then
+		sp_args+=(--skip_normalize)
+	fi
+	"${project_root}/scripts/handle_special_paths.sh" --phase=paths "${binary_tmp_dir}" "${binary_dir}" "${sp_args[@]}"
 
 	# === Linyaps App ID Detection ===
 	# 检测 handle_special_paths.sh 是否发现了 linyaps 格式的 /opt/apps/<id>/ 结构

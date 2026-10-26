@@ -11,7 +11,7 @@
 #=============================================================================
 
 srcType="tar"
-templateVer="2026.10.22.1"
+templateVer="2026.10.26.1"
 
 set -x
 
@@ -38,6 +38,10 @@ auto_clean="false"
 auto_push="${push}"
 ## 额外构建参数，原样追加到 ll-builder build（默认含 --skip-output-check）
 build_extra_args="--skip-output-check"
+
+# 为 true 时跳过特殊路径文件名标准化（保留原始文件名，disable fallback）
+skip_special_paths="false"
+
 repo_name="nightly"
 repo_url="https://repo-dev.cicd.getdeepin.org"
 push_account_user=""
@@ -137,6 +141,9 @@ init_global_data() {
 			;;
 		--nested_script)
 			nested_script="$val"
+			;;
+		--skip_special_paths)
+			skip_special_paths="$val"
 			;;
 		esac
 	done
@@ -664,7 +671,12 @@ build_pak() {
 	#    例如：/opt/uTools/ -> binary/uTools/ (去掉 opt/ 層級)
 	# 3. 支持包含空格、括號、中文、&、@、#、$ 等特殊字符的路徑
 	# 注意：此操作必須在所有軟鏈動作之前完成，否則軟鏈關係將被破壞
-	"${project_root}/scripts/handle_special_paths.sh" --phase=paths "${binary_tmp_dir}" "${binary_dir}"
+	# --skip_special_paths=true 时禁用文件名标准化（disable fallback），保留原始文件名
+	local sp_args=()
+	if [ "${skip_special_paths}" = "true" ]; then
+		sp_args+=(--skip_normalize)
+	fi
+	"${project_root}/scripts/handle_special_paths.sh" --phase=paths "${binary_tmp_dir}" "${binary_dir}" "${sp_args[@]}"
 
 	# 創建 bin/ 目錄用於存放 wrapper 腳本
 	# 注意：此操作必須在特殊路徑處理完成之後進行
