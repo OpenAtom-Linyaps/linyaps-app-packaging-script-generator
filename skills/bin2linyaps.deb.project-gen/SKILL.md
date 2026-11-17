@@ -79,6 +79,8 @@ mkdir -p "${project_dir}/config"
 # 拷贝辅助脚本
 cp "scripts/handle_special_paths.sh" "${project_dir}/scripts/"
 chmod +x "${project_dir}/scripts/handle_special_paths.sh"
+cp "scripts/download_missing_deps.sh" "${project_dir}/scripts/"
+chmod +x "${project_dir}/scripts/download_missing_deps.sh"
 
 # 拷贝入口脚本分析器（用于检测使用 $1/$2 的风险脚本）
 if [ -f "templates/scripts/analyze_entry_script.sh" ]; then
