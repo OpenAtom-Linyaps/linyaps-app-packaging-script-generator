@@ -34,7 +34,9 @@ build: |
   # files/ 映射到 /usr/ 目录
   # binary/ 的内容直接对应 $prefix/ (files/)
   # pak_linyaps.sh 已处理路径转换和软链
+  shopt -s dotglob
   cp -rf /project/binary/* ${prefix}/
+  shopt -u dotglob
 
   # 复制桌面文件、图标等资源
   cp -rf /project/files_res/* ${prefix}/

@@ -126,6 +126,67 @@ detect_symlink_issues() {
 	fi
 }
 
+# 验证 desktop Exec 对应文件的可执行权限
+validate_desktop_exec_permissions() {
+	log_info "验证 desktop Exec 对应文件权限..."
+
+	local apps_dir="${CHECK_DIR}/share/applications"
+	if [ ! -d "${apps_dir}" ]; then
+		log_info "  未找到 desktop 文件目录 (${apps_dir})，跳过"
+		return
+	fi
+
+	local desktop_files
+	desktop_files=$(find "${apps_dir}" -name "*.desktop" -type f 2>/dev/null || true)
+
+	if [ -z "${desktop_files}" ]; then
+		log_info "  未找到 desktop 文件，跳过"
+		return
+	fi
+
+	local issues=0
+	while IFS= read -r desktop_file; do
+		local exec_line
+		exec_line=$(grep -E "^Exec=" "${desktop_file}" | head -n 1)
+		[ -z "${exec_line}" ] && continue
+
+		local exec_value="${exec_line#Exec=}"
+		# 移除 env VAR=val 前缀
+		exec_value=$(echo "${exec_value}" | sed 's/^env \(\S*=\S*\s\)*//')
+		# 提取第一个参数作为 binary 名称（去除路径前缀）
+		local exec_binary
+		exec_binary=$(echo "${exec_value}" | awk '{print $1}' | xargs basename 2>/dev/null)
+		[ -z "${exec_binary}" ] && continue
+
+		# 在 CHECK_DIR 中查找该 binary
+		local found_exe
+		found_exe=$(find "${CHECK_DIR}" -type f -name "${exec_binary}" -executable 2>/dev/null | head -n 1)
+		if [ -n "${found_exe}" ]; then
+			if [ "${VERBOSE}" = "true" ]; then
+				log_info "  ✓ ${exec_binary}: 可执行权限正常 (${found_exe})"
+			fi
+			continue
+		fi
+
+		# Fallback: 查找文件是否存在但无执行权限
+		local found_noexe
+		found_noexe=$(find "${CHECK_DIR}" -type f -name "${exec_binary}" 2>/dev/null | head -n 1)
+		if [ -n "${found_noexe}" ]; then
+			log_warning "  ${exec_binary}: Desktop Exec entry - file exists but is NOT executable"
+			log_warning "    Location: ${found_noexe}"
+			log_warning "    Desktop file: ${desktop_file}"
+			((issues++)) || true
+		fi
+	done < <(echo "${desktop_files}")
+
+	if [ ${issues} -gt 0 ]; then
+		ISSUES_FOUND=$((ISSUES_FOUND + issues))
+		log_warning "  共发现 ${issues} 个 desktop Exec 对应文件无执行权限"
+	else
+		log_success "  所有 desktop Exec 对应文件均有可执行权限"
+	fi
+}
+
 # 修复嵌套 bin/ 问题
 fix_nested_bin() {
 	log_info "修复嵌套 bin/ 问题..."
@@ -232,6 +293,7 @@ main() {
 	detect_nested_bin
 	validate_binary_structure
 	detect_symlink_issues
+	validate_desktop_exec_permissions
 
 	# 自动修复
 	if [ "${AUTO_FIX}" = "true" ] && [ ${ISSUES_FOUND} -gt 0 ]; then

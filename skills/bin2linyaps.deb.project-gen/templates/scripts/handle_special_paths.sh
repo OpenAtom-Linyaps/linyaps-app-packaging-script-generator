@@ -25,6 +25,9 @@
 
 set -e
 
+# 启用 dotglob 以匹配隐藏文件（如 .xingyeB2B）
+shopt -s dotglob
+
 # 颜色定义
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -284,7 +287,7 @@ copy_with_normalized_names() {
 
 	# 遍历源目录中的所有项（文件和目录）
 	for item in "${src_dir}"/*; do
-		if [ -e "${item}" ]; then
+		if [ -e "${item}" ] || [ -L "${item}" ]; then
 			local item_name=$(basename "${item}")
 			local normalized_name=$(normalize_filename "${item_name}")
 
@@ -366,7 +369,7 @@ copy_dir_with_normalization() {
 
 	# 遍历源目录中的所有项（文件和目录）
 	for item in "${src_dir}"/*; do
-		if [ -e "${item}" ]; then
+		if [ -e "${item}" ] || [ -L "${item}" ]; then
 			local item_name=$(basename "${item}")
 			local normalized_name=$(normalize_filename "${item_name}")
 
@@ -400,6 +403,97 @@ copy_dir_with_normalization() {
 			((STAT_SKIPPED_FILES++)) || true
 		fi
 	done
+}
+
+# 在任意 base_dir 下检测 linyaps 格式结构
+# 检查 base_dir 下是否恰好有一个子目录（单个应用）
+# 如果是，返回该子目录名作为 app_id
+# 否则返回空字符串
+detect_linyaps_app_structure_at() {
+	local base_dir="$1"
+
+	if [ ! -d "${base_dir}" ]; then
+		echo ""
+		return 1
+	fi
+
+	# 查找包含 files/ 子目录的应用目录（linyaps 结构标志）
+	local detected_app_id=""
+	for app_dir in "${base_dir}"/*; do
+		if [ -d "${app_dir}/files" ]; then
+			detected_app_id=$(basename "${app_dir}")
+			echo "${detected_app_id}"
+			return 0
+		fi
+	done
+
+	echo ""
+	return 1
+}
+
+# 检测 /opt/apps/ 下的 linyaps 格式结构（向后兼容包装）
+detect_linyaps_app_structure() {
+	detect_linyaps_app_structure_at "${SRC_DIR}/opt/apps"
+}
+
+# 在任意 base_dir 下处理 linyaps 格式的 <app_id>/ 目录
+# 将 files/ 内容直接平铺到 DEST_DIR（等同于 /usr/ 处理）
+# 跳过 entries/ 子目录（由 files_res/ 管线处理）
+process_linyaps_app_structure_at() {
+	local base_dir="$1"
+	local app_id="$2"
+	local app_base_dir="${base_dir}/${app_id}"
+
+	log_success "检测到 linyaps 应用结构: ${base_dir}/${app_id}/"
+
+	# 将 app_id 写入 .detected_app_id 供上游消费
+	echo "${app_id}" >"${DEST_DIR}/.detected_app_id"
+	log_success "  已写入 .detected_app_id: ${app_id}"
+
+	if [ -d "${app_base_dir}/files" ]; then
+		log_success "  处理 files/ 目录（平铺到 binary/）..."
+		copy_dir_with_normalization "${app_base_dir}/files" "${DEST_DIR}"
+		log_success "  files/ 处理完成"
+	else
+		log_info "  未找到 files/ 子目录，跳过"
+	fi
+
+	# 跳过 entries/ 子目录（由 pak_linyaps.sh 的 files_res/ 管线处理）
+	if [ -d "${app_base_dir}/entries" ]; then
+		log_info "  跳过 entries/ 子目录（由 files_res/ 管线处理）"
+	fi
+
+	# 处理其他顶层项（如有）
+	for item in "${app_base_dir}"/*; do
+		if [ -e "${item}" ] || [ -L "${item}" ]; then
+			local item_name=$(basename "${item}")
+			case "${item_name}" in
+			files | entries)
+				continue
+				;;
+			*)
+				log_info "  处理其他顶层项: ${item_name}"
+				local normalized_name=$(normalize_filename "${item_name}")
+				if [ -d "${item}" ]; then
+					copy_dir_with_normalization "${item}" "${DEST_DIR}/${normalized_name}"
+					((STAT_COPIED_DIRS++)) || true
+				else
+					if cp -a "${item}" "${DEST_DIR}/${normalized_name}" 2>/dev/null; then
+						((STAT_COPIED_FILES++)) || true
+					fi
+				fi
+				;;
+			esac
+		fi
+	done
+
+	log_success "Linyaps 应用结构处理完成: ${base_dir}/${app_id}/"
+}
+
+# 处理 linyaps 格式的 /opt/apps/<id>/ 目录（向后兼容包装）
+process_linyaps_app_structure() {
+	local app_id="$1"
+	process_linyaps_app_structure_at "${SRC_DIR}/opt/apps" "${app_id}"
 }
 
 # Linyaps 规范目录列表（这些目录可以直接在 files/ 下）
@@ -505,12 +599,30 @@ process_non_standard_paths() {
 				continue
 				;;
 			opt | var | srv | etc)
+				if [ "${dir_name}" = "opt" ]; then
+					# 特殊检测: 是否为 linyaps 格式 /opt/apps/<id>/
+					local detected_ll_id
+					detected_ll_id=$(detect_linyaps_app_structure || true)
+					if [ -n "${detected_ll_id}" ]; then
+						process_linyaps_app_structure "${detected_ll_id}"
+						continue
+					fi
+				fi
 				# FHS 规则目录：剥离前缀，展平一层
 				# 例如 /opt/uTools/ → binary/uTools/
 				log_info "处理 FHS 目录 /${dir_name}/ (剥离前缀，展平一层)..."
 				process_non_usr_subdirs "${top_item}"
 				;;
 			*)
+				# 特殊检测: 顶层 apps/ 可能是 linyaps 结构（无 opt/ 前缀）
+				if [ "${dir_name}" = "apps" ]; then
+					local detected_ll_id
+					detected_ll_id=$(detect_linyaps_app_structure_at "${SRC_DIR}/apps" || true)
+					if [ -n "${detected_ll_id}" ]; then
+						process_linyaps_app_structure_at "${SRC_DIR}/apps" "${detected_ll_id}"
+						continue
+					fi
+				fi
 				# 非规则目录（如 app/、data/ 等）：完整复制为子目录，不展平
 				# 例如 app/ → binary/app/
 				log_info "处理非规则目录: ${dir_name}/ (完整复制为子目录)..."
@@ -537,13 +649,6 @@ process_non_standard_paths() {
 		elif [ -e "${top_item}" ] || [ -L "${top_item}" ]; then
 			# 处理顶层文件和符号链接（如 .desktop 文件、可执行文件等）
 			local file_name=$(basename "${top_item}")
-
-			# 跳过隐藏文件
-			case "${file_name}" in
-			.*)
-				continue
-				;;
-			esac
 
 			log_info "  处理顶层文件: ${file_name}"
 
@@ -1004,6 +1109,26 @@ strip_wrapper_directory() {
 	if [ "${has_standard_dir}" = "true" ]; then
 		log_info "  检测到 linyaps 规范目录结构，跳过包装目录剥离"
 		return 0
+	fi
+
+	# 如果是 linyaps 应用结构 (opt/apps/<id>/)，跳过剥离
+	# opt/ 是语义路径而非包装层，剥离后会破坏 process_non_standard_paths 的检测
+	# 检测方式：opt/apps/ 下存在至少一个包含 files/ 子目录的子目录
+	if [ -d "${SRC_DIR}/opt/apps" ]; then
+		local found_linyaps_app=false
+		for app_dir in "${SRC_DIR}/opt/apps"/*; do
+			if [ -d "${app_dir}/files" ]; then
+				found_linyaps_app=true
+				break
+			fi
+		done
+		if [ "${found_linyaps_app}" = "true" ]; then
+			log_info "  检测到 linyaps 应用结构，跳过包装目录剥离"
+			return 0
+		fi
+		log_info "  opt/apps/ 存在但未检测到 linyaps 结构，继续包装目录检测"
+	else
+		log_info "  opt/apps/ 不存在，继续包装目录检测"
 	fi
 
 	# 统计顶层目录和文件数量
