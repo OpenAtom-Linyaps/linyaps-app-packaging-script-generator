@@ -485,35 +485,18 @@ exec "${script_dir}/${wrapper}" "$@"
 
 ## 約束條件
 
+**本 skill 遵循 `bin2linyaps.constraints` SKILL 的通用约束**：wrapper/command 契约（Exec、command 由 pak_linyaps.sh 构建时 wrapper 机制自动处理，禁止手动修改）、base/runtime 动态注入、`${ll_version}` 版本契约、模板完整性。以下仅列出 AppImage 流程特有约束：
+
 1. **不要過度分析結構**：只需定位 Exec 命令，pak_linyaps.sh 會處理路徑解析
 2. **Icon 嚴格驗證**：從 desktop Icon 欄位提取，支持 URL 導入，無有效 icon 時終止
-3. **Wrapper 機制**：Exec 和 command 由 pak_linyaps.sh 在構建時自動處理
-4. **Base/Runtime 動態注入**：`linglong.yaml` 模板中 `base: ""`, `runtime: ""` 為空佔位符，由 `build_pak()` 透過 `sed` 延遲注入，支援 `--base_id`/`--runtime_id` CLI 參數動態覆蓋
-5. **🚫 禁止手動修改 Exec（嚴格）**：
-   - 資源收集階段（Step 4/5/6/7）**絕對禁止**修改 desktop 文件的 `Exec=` 欄位
-   - **絕對禁止**手動創建 bash wrapper 腳本或將 Exec 替換為 bash 路徑
-   - **絕對禁止**在工程目錄中手動生成任何 `.sh` wrapper 文件
-   - Exec 的修改**只能**由 `pak_linyaps.sh` 的 wrapper 機制在構建時自動完成
-   - 如果發現 Exec 需要修改，**不要動手**，讓 pak_linyaps.sh 處理
-6. **🚫 禁止手動設置 base/runtime**：
-   - `linglong.yaml` 模板中 `base: ""`, `runtime: ""` 為空佔位符
-   - **絕對禁止**在生成階段將 base/runtime 寫入模板
-   - **絕對禁止**在 `build_dir_init()` 中 `export base=/runtime=` 變量
-   - base/runtime **只能**由 `build_pak()` 在構建時透過 `sed` 延遲注入
-   - 用戶通過 `--base_id`/`--runtime_id` CLI 參數動態指定
-7. **🚫 禁止干預 ll-builder 構建**：SKILL 層面（Step 1-7）只負責資源收集和工程準備，不得在 SKILL 執行過程中調用 `ll-builder` 或修改構建流程
-8. **pak_linyaps.sh 是完整構建腳本**：用戶執行 `bash pak_linyaps.sh --src_path ... --package_id ...` 後，腳本自動完成從解壓到 .layer 導出的全部流程，無需手動干預
-9. **構建環境隔離**：`build_tmp_dir` 作為構建沙箱，所有中間產物在其中生成，構建完成後可自動清理
-10. **AppImage 特殊處理**：
-    - 使用 `extract_appimage.sh` 解壓（而非 tar -xf）
-    - 保持 squashfs-root 原始目錄結構
-    - 使用 `resolve_exec_command.sh` 解析 Exec 命令
-    - 使用 `parse_appimage_metadata.sh` 提取元數據
-11. **🚫 禁止手動填入 version（新增）**：
-    - `linglong.yaml` 模板中 `version: "${ll_version}"` 和 `package.version: ${ll_version}` **必須保持為變量**
-    - **絕對禁止**在生成工程時將 version 替換為 `"1.0"`、`"0.0.1"` 等絕對值
-    - version **只能**由 `pak_linyaps.sh` 在構建時透過 `envsubst` 自動替換
-    - 若 LLM 錯誤地將 version 寫死，`validate_linglong_yaml.py` 將在兼容性測試中報錯
+3. **🚫 禁止干預 ll-builder 構建**：SKILL 層面（Step 1-7）只負責資源收集和工程準備，不得在 SKILL 執行過程中調用 `ll-builder` 或修改構建流程
+4. **pak_linyaps.sh 是完整構建腳本**：用戶執行 `bash pak_linyaps.sh --src_path ... --package_id ...` 後，腳本自動完成從解壓到 .layer 導出的全部流程，無需手動干預
+5. **構建環境隔離**：`build_tmp_dir` 作為構建沙箱，所有中間產物在其中生成，構建完成後可自動清理
+6. **AppImage 特殊處理**：
+   - 使用 `extract_appimage.sh` 解壓（而非 tar -xf）
+   - 保持 squashfs-root 原始目錄結構
+   - 使用 `resolve_exec_command.sh` 解析 Exec 命令
+   - 使用 `parse_appimage_metadata.sh` 提取元數據
 
 ---
 

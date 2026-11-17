@@ -207,81 +207,15 @@ permission:
 
 **调用约定**：所有脚本调用均使用相對於 workspace 根目錄的路徑，**不要**使用 `cd` 切換工作目錄後再執行。
 
-## Workspace 根目錄檢測
+## Workspace 根目錄與 Skill 載入約定
 
-在查找 skills 之前，**必須先確認 workspace 根目錄**。LLM 的工作目錄可能不是 workspace 根目錄，導致相對路徑全部失效。
+**唯一約定**：skills 固定位於 `WORKSPACE_ROOT/skills/<name>/SKILL.md`，`WORKSPACE_ROOT` 即本 agent 工作目錄（包含 `skills/` 與 `agents/` 的目錄）。**無需任何搜索操作**。
 
-### 檢測方法（按順序執行）
+載入方式（二選一，按環境能力）：
+1. **`skill()` 工具**：`skill({ name: "<skill名>" })` 按 name 直接載入 `skills/<name>/SKILL.md`；
+2. **文件兜底**：若 `skill()` 不可用，直接 `cat skills/<name>/SKILL.md`。
 
-1. **檢查當前目錄**：若包含 `skills/` 和 `agents/` 目錄，即為 workspace 根目錄
-2. **向上遍歷父目錄**：最多 5 層，查找包含 `skills/` 和 `agents/` 的目錄
-3. **客戶端目錄搜索**：在已聲明的客戶端配置目錄中搜索
-
-### 檢測命令
-
-```bash
-# 方法1: 檢查當前目錄
-[ -d "skills" ] && [ -d "agents" ] && echo "Workspace root: $(pwd)"
-
-# 方法2: 向上查找（最多5層）
-current=$(pwd); for i in $(seq 1 5); do [ -d "$current/skills" ] && [ -d "$current/agents" ] && echo "Workspace root: $current" && break; current=$(dirname "$current"); done
-
-# 方法3: 客戶端目錄搜索（後備）— 只在已聲明的客戶端配置目錄中搜索
-for dir in \
-  "$HOME/.config/opencode" \
-  "$HOME/.local/share/opencode" \
-  "$HOME/.opencode" \
-  "$HOME/.claude" \
-  "$HOME/.cline/rules"; do
-  [ -d "$dir" ] && find "$dir" -maxdepth 4 -type d -name "skills" -exec sh -c '[ -d "$(dirname {})/agents" ] && echo "Workspace root: $(dirname {})"' \; 2>/dev/null
-done
-```
-
-**確認後**：所有後續路徑都基於此 workspace 根目錄。將根目錄路徑記為 `WORKSPACE_ROOT`，後續所有腳本調用使用 `$WORKSPACE_ROOT/skills/...` 或相對路徑。
-
-## Skills 查找策略
-
-所有 skill 已通過 `.opencode/skills/` 符號連結指向 `skills/` 源目錄，支持多客戶端自動發現。
-
-### OpenCode 環境（首選）
-
-直接使用內建 `skill` 工具載入（`.opencode/skills/` 符號連結已就位）：
-
-```
-skill({ name: "bin2linyaps.deb.analyze" })
-skill({ name: "bin2linyaps.deb.project-gen" })
-skill({ name: "bin2linyaps.tar.transfer" })
-skill({ name: "bin2linyaps.appimage.transfer" })
-skill({ name: "bin2linyaps.deb.collect-resources" })
-skill({ name: "bin2linyaps.validate-structure" })
-skill({ name: "bin2linyaps.compat-testing" })
-skill({ name: "bin2linyaps.fix" })
-```
-
-### 其他客戶端 / Fallback
-
-直接讀取 `skills/*/SKILL.md` 文件（相對於 workspace 根目錄）：
-
-```bash
-cat skills/bin2linyaps.deb.analyze/SKILL.md
-cat skills/bin2linyaps.deb.project-gen/SKILL.md
-```
-
-### Skills 符號連結結構
-
-```
-.opencode/skills/          ← discovery 路徑（符號連結）
-├── bin2linyaps.deb.analyze         → ../../skills/bin2linyaps.deb.analyze
-├── bin2linyaps.deb.collect-resources   → ../../skills/bin2linyaps.deb.collect-resources
-├── bin2linyaps.deb.project-gen → ../../skills/bin2linyaps.deb.project-gen
-├── bin2linyaps.compat-testing       → ../../skills/bin2linyaps.compat-testing
-├── bin2linyaps.fix         → ../../skills/bin2linyaps.fix
-├── bin2linyaps.validate-structure → ../../skills/bin2linyaps.validate-structure
-├── bin2linyaps.tar.transfer          → ../../skills/bin2linyaps.tar.transfer
-└── bin2linyaps.appimage.transfer     → ../../skills/bin2linyaps.appimage.transfer
-```
-
-> **注意**：所有腳本調用使用相對於 workspace 根目錄的路徑，**不要**使用 `cd` 切換工作目錄後再執行。
+> **注意**：所有腳本調用使用相對於 `WORKSPACE_ROOT` 的路徑，**不要**使用 `cd` 切換工作目錄後再執行。
 > **用戶不可獨立調用**：所有子 skill 設置為 `user-invocable: false`，只能通過 agent 工作流間接使用。
 
 ## 工作流程
@@ -290,15 +224,13 @@ cat skills/bin2linyaps.deb.project-gen/SKILL.md
 
 #### 1.1 載入全局配置
 
-1. **讀取 `agent-config.json`**（固定路徑 `WORKSPACE_ROOT/agent-config.json`）：
+1. **讀取 `agent-config.json`**（固定路徑 `WORKSPACE_ROOT/agent-config.json`，記錄為 `agent_config_path`）：
    - 解析 `global` 配置（`base`、`runtime`、`projects_root`、`output_dir`、`data_dir`、`build_tmp_dir`、`src_dir`）
+   - 解析 `extension` 區段：將 `arch_mapping.path`、`base_runtime_whitelist.path` 解析為**絕對路徑**，注入後續各 skill 調用（如 `validate_linglong_yaml.py --base-runtime-whitelist=<path>`）
    - 解析 `version_extract_examples` 版本提取規則
    - **若文件不存在**：使用 agent.md 中的硬編碼預設值
 
-2. **`${tag}` 路徑即時解析**：
-   - 運行 `date +"%Y-%m-%d"` 獲取當天日期
-   - 將所有含 `${tag}` 的路徑替換為完整路徑（例如 `./output/${tag}` → `./output/2026-06-11`）
-   - **記錄解析後的完整路徑**，後續所有步驟均使用完整路徑
+2. **`${tag}` 路徑即時解析**：按「全局聲明」的「`${tag}` 路徑即時解析規則」執行（運行 `date +"%Y-%m-%d"` → 替換所有含 `${tag}` 路徑 → 記錄固化完整路徑）。
 
 3. **載入順序（優先級從高到低）**：
    - CSV 顯式字段（如 `base`、`runtime`）> 任務 JSON 的 `global` 區段 > `agent-config.json` > agent.md 預設值
@@ -361,6 +293,16 @@ b. **创建任务列表**
    - 为每个包（deb 或 tar）创建处理任务
    - 根据文件类型标记处理模式（deb 模式 / tar 模式）
    - 显示预计处理数量
+
+#### 1.5 载入约束 SKILL
+
+在初始化末尾一次性载入通用构建约束，后续步骤统一引用，不重复展开：
+
+```
+skill({ name: "bin2linyaps.constraints" })   # 一次性载入 wrapper/command、${ll_version}、package_id、base/runtime、依赖核验、模板完整性 约束
+```
+
+> **已载入约束**：wrapper/command 契约、version 契约（`${ll_version}`）、package_id 契约、base/runtime 白名单、依赖存在性核验、模板完整性。后续各步骤按此约束执行，各子 skill **不再复述**整段约束。
 
 ### Phase 2: 单包处理流程
 
@@ -727,16 +669,8 @@ Desktop文件:
 
 ### 调用前确认路径
 ```bash
-# 确认 workspace 根目录（若尚未确认）
-if [ -d "skills" ] && [ -d "agents" ]; then
-    echo "Workspace root: $(pwd)"
-else
-    # 向上查找
-    current=$(pwd); for i in $(seq 1 5); do
-        [ -d "$current/skills" ] && [ -d "$current/agents" ] && echo "Workspace root: $current" && break
-        current=$(dirname "$current")
-    done
-fi
+# 唯一约定：本 agent 工作目录即为 workspace 根目录（含 skills/ 与 agents/）
+[ -d "skills" ] && [ -d "agents" ] && echo "Workspace root: $(pwd)"
 ```
 
 ### 调用bin2linyaps.deb.analyze
@@ -848,7 +782,7 @@ bash skills/bin2linyaps.appimage.transfer/templates/pak_linyaps.sh \
 4. **临时文件**: 处理完成后清理临时解压目录
 5. **日志保存**: 所有测试和构建日志保存到 `reports/` 目录
 6. **并发控制**: 如果检测到要同时处理多个来源包，应该进行队列管理，每次处理一个包，限制并发数量
-7. **多客户端兼容性**: 若工具调用失败，先按「Workspace 根目錄檢測」確認根目錄，再按「Skills 查找策略」逐步查找；检查是否使用了 `cd` 切换工作目录，应改用绝对路径或相对workspace根目录的路径
+7. **多客户端兼容性**: 若工具调用失败，先按「Workspace 根目錄與 Skill 載入約定」確認根目錄，再對應載入 skill；检查是否使用了 `cd` 切换工作目录，应改用绝对路径或相对workspace根目录的路径
 
 ## 开始处理
 
