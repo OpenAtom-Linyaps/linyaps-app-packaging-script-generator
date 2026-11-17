@@ -61,7 +61,7 @@ com.example.app,x86_64,1.0.0,https://example.com/app.deb
 - `pak_linyaps.sh` - 自动化打包脚本
 - `scripts/` - 辅助脚本目录
 - `config/` - 配置文件目录（含白名单配置）
-- `templates/files_res/` - 资源文件目录
+- `templates/files_res/` - 资源文件目录（空骨架，结构参考 `reference/files_res_structure.md`）
 
 ## 工作流程
 
@@ -123,16 +123,20 @@ fi
 
 ### 2. 生成 linglong.yaml
 
-基于 `scripts/templates/` 目录下的模板生成，使用变量替换：
+基于 `templates/` 目录下的模板生成，使用变量替换：
 
 ```bash
 # 模板目录结构
-# scripts/templates/
+# templates/
 #   ├── linglong.yaml
-#   └── files_res/
-#       ├── share/applications/
-#       ├── share/icons/
-#       └── ...
+#   ├── pak_linyaps.sh
+#   └── files_res/              # 空骨架，由 agent 根据目标应用填充
+#       └── share/
+#           ├── applications/
+#           ├── icons/hicolor/
+#           ├── mime/packages/
+#           └── pixmaps/
+# files_res 的目录结构规范请参考 reference/files_res_structure.md
 ```
 
 ```yaml
@@ -570,17 +574,18 @@ CI_ll_<package_id>/
 │   └── handle_special_paths.sh # 特殊路径处理脚本
 └── templates/
     ├── linglong.yaml           # 玲珑配置模板
-    └── files_res/              # 资源文件目录
+    └── files_res/              # 资源文件目录（空骨架，由 agent 根据目标应用填充）
         └── share/
             ├── applications/
-            ├── icons/
-            ├── appdata/
-            └── ...
+            ├── icons/hicolor/
+            ├── mime/packages/
+            └── pixmaps/
 ```
 
 **注意：**
 - 工程初始化时不包含任何源文件（deb包），deb路径由用户执行脚本时通过 `--src_path` 参数指定
 - `config/base_runtime_whitelist.conf` 用於驗證 base/runtime 組合的合法性，優先從全局 `skills/config/` 拷貝，全局不存在時使用 skill 級別副本
+- `templates/files_res/` 初始化为空骨架，agent 应根据目标应用参考 `reference/files_res_structure.md` 生成对应的资源文件
 
 ## 二进制软链处理
 
