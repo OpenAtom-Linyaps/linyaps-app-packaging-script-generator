@@ -30,13 +30,13 @@ Skills 已通过 `.opencode/skills/` 符号链接自动就位，**无需手动�
 
 ```
 .opencode/skills/
-├── deb-analysis           → ../../skills/deb-analysis
-├── resource-collector     → ../../skills/resource-collector
-├── linglong-project-gen   → ../../skills/linglong-project-gen
-├── compat-testing         → ../../skills/compat-testing
-├── linglong-fix           → ../../skills/linglong-fix
-├── project-structure-validator → ../../skills/project-structure-validator
-└── tar-linyaps            → ../../skills/tar-linyaps
+├── bin2linyaps.deb.analyze           → ../../skills/bin2linyaps.deb.analyze
+├── bin2linyaps.deb.collect-resources     → ../../skills/bin2linyaps.deb.collect-resources
+├── bin2linyaps.deb.project-gen   → ../../skills/bin2linyaps.deb.project-gen
+├── bin2linyaps.compat-testing         → ../../skills/bin2linyaps.compat-testing
+├── bin2linyaps.fix           → ../../skills/bin2linyaps.fix
+├── bin2linyaps.validate-structure → ../../skills/bin2linyaps.validate-structure
+└── bin2linyaps.tar.transfer            → ../../skills/bin2linyaps.tar.transfer
 ```
 
 > **注意**：所有子 skill 设置为 `user-invocable: false`，只能通过 agent 工作流间接使用，不可独立调用。
@@ -51,21 +51,21 @@ Skills 已通过 `.opencode/skills/` 符号链接自动就位，**无需手动�
 │   ├── agents/
 │   │   └── deb-linglong-packer.md    # Agent 定义
 │   └── skills/                        # 符号链接（自动发现）
-│       ├── deb-analysis           → ../../skills/deb-analysis
-│       ├── linglong-project-gen   → ../../skills/linglong-project-gen
-│       ├── resource-collector     → ../../skills/resource-collector
-│       ├── compat-testing         → ../../skills/compat-testing
-│       ├── linglong-fix           → ../../skills/linglong-fix
-│       ├── project-structure-validator → ../../skills/project-structure-validator
-│       └── tar-linyaps            → ../../skills/tar-linyaps
+│       ├── bin2linyaps.deb.analyze           → ../../skills/bin2linyaps.deb.analyze
+│       ├── bin2linyaps.deb.project-gen   → ../../skills/bin2linyaps.deb.project-gen
+│       ├── bin2linyaps.deb.collect-resources     → ../../skills/bin2linyaps.deb.collect-resources
+│       ├── bin2linyaps.compat-testing         → ../../skills/bin2linyaps.compat-testing
+│       ├── bin2linyaps.fix           → ../../skills/bin2linyaps.fix
+│       ├── bin2linyaps.validate-structure → ../../skills/bin2linyaps.validate-structure
+│       └── bin2linyaps.tar.transfer            → ../../skills/bin2linyaps.tar.transfer
 ├── skills/                            # 源文件（canonical 位置）
-│   ├── deb-analysis/
-│   ├── linglong-project-gen/
-│   ├── resource-collector/
-│   ├── compat-testing/
-│   ├── linglong-fix/
-│   ├── project-structure-validator/
-│   └── tar-linyaps/
+│   ├── bin2linyaps.deb.analyze/
+│   ├── bin2linyaps.deb.project-gen/
+│   ├── bin2linyaps.deb.collect-resources/
+│   ├── bin2linyaps.compat-testing/
+│   ├── bin2linyaps.fix/
+│   ├── bin2linyaps.validate-structure/
+│   └── bin2linyaps.tar.transfer/
 └── agents/
     └── deb-linglong-packer.agent.md
 ```
@@ -75,12 +75,12 @@ Skills 已通过 `.opencode/skills/` 符号链接自动就位，**无需手动�
 ```bash
 # 复制 skills 到 .claude/skills/
 mkdir -p .claude/skills
-cp -r skills/deb-analysis           .claude/skills/
-cp -r skills/linglong-project-gen   .claude/skills/
-cp -r skills/resource-collector     .claude/skills/
-cp -r skills/compat-testing         .claude/skills/
-cp -r skills/linglong-fix           .claude/skills/
-cp -r skills/project-structure-validator .claude/skills/
+cp -r skills/bin2linyaps.deb.analyze           .claude/skills/
+cp -r skills/bin2linyaps.deb.project-gen   .claude/skills/
+cp -r skills/bin2linyaps.deb.collect-resources     .claude/skills/
+cp -r skills/bin2linyaps.compat-testing         .claude/skills/
+cp -r skills/bin2linyaps.fix           .claude/skills/
+cp -r skills/bin2linyaps.validate-structure .claude/skills/
 ```
 
 > **注意**：Claude Code 没有内建的 `skill` 工具，Agent 会直接读取 `SKILL.md` 文件内容作为指令。
@@ -90,12 +90,12 @@ cp -r skills/project-structure-validator .claude/skills/
 ```bash
 # 复制 skills 到 .clinerules/skills/ 或 .agents/skills/
 mkdir -p .agents/skills
-cp -r skills/deb-analysis           .agents/skills/
-cp -r skills/linglong-project-gen   .agents/skills/
-cp -r skills/resource-collector     .agents/skills/
-cp -r skills/compat-testing         .agents/skills/
-cp -r skills/linglong-fix           .agents/skills/
-cp -r skills/project-structure-validator .agents/skills/
+cp -r skills/bin2linyaps.deb.analyze           .agents/skills/
+cp -r skills/bin2linyaps.deb.project-gen   .agents/skills/
+cp -r skills/bin2linyaps.deb.collect-resources     .agents/skills/
+cp -r skills/bin2linyaps.compat-testing         .agents/skills/
+cp -r skills/bin2linyaps.fix           .agents/skills/
+cp -r skills/bin2linyaps.validate-structure .agents/skills/
 ```
 
 > **注意**：Cline 没有内建的 `skill` 工具，Agent 会直接读取 `SKILL.md` 文件内容作为指令。
