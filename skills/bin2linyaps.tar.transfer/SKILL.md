@@ -303,6 +303,8 @@ sed -i "s|\${description}|${description}|g" "${project_dir}/templates/linglong.y
 # 拷貝掃描腳本
 cp "${skill_root}/scripts/scan_executables.sh" "${project_dir}/scripts/"
 chmod +x "${project_dir}/scripts/scan_executables.sh"
+cp "${skill_root}/scripts/download_missing_deps.sh" "${project_dir}/scripts/"
+chmod +x "${project_dir}/scripts/download_missing_deps.sh"
 
 # 拷貝入口腳本分析器（用於檢測使用 $1/$2 的風險腳本）
 cp "${skill_root}/scripts/analyze_entry_script.sh" "${project_dir}/scripts/"
