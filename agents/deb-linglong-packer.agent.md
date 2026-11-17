@@ -483,6 +483,64 @@ b. **创建任务列表**
      --build-tmp-dir=${BUILD_TMP_DIR}
    ```
 
+
+#### Step 5: 兼容性测试
+调用 \`bin2linyaps.compat-testing\` skill 自动化执行：
+
+1. **构造子任务 JSON**（从 agent-config 和当前项目信息组装）：
+   ```json
+   {
+     "global": {
+       "projects_root": "<projects_root>",
+       "output_dir": "<output_dir>",
+       "build_tmp_dir": "<build_tmp_dir>",
+       "src_dir": "<src_dir>"
+     },
+     "tasks": [
+       {
+         "pkgName": "<package_id>",
+         "src_url": "<src_url>",
+         "arch": "<arch>",
+         "orig_version": "<version>"
+       }
+     ]
+   }
+   ```
+
+2. **前置检测**（可选）：
+   ```bash
+   bash skills/bin2linyaps.compat-testing/scripts/validate_projects.sh \
+     --task-file=<subtask.json> --output=reports/precheck.json
+   ```
+
+3. **执行全流程测试**：
+   ```bash
+   bash skills/bin2linyaps.compat-testing/scripts/run_tasks.sh <subtask.json>
+   ```
+
+4. **读取报告**：解析各任务的 `report.json`
+   - 全部 `passed` → 兼容性测试通过
+   - 存在 `failed` → 调用 `bin2linyaps.fix`
+   - **输出**: 测试报告（汇总 + 分步骤详情）
+
+#### Step 5.5: 缺失依赖修复（条件执行）
+如果前一阶段的兼容性测试生成了 `missing_deps.json` 或 `missing_deps.csv`，调用 \`bin2linyaps.external-missing-deps-fetch\` skill 自动修复模板依赖：
+
+1. **检查构建元数据**：读取 `reports/<pkg>/build_meta.json`，检查 `missing_deps_json` 或 `missing_deps_csv` 是否为非 null
+   - 非 null → 存在缺失依赖，继续执行
+   - null → 跳过，无缺失依赖
+
+2. **执行缺失依赖获取**：
+   ```bash
+   # 从 build_meta.json 读取 build_tmp_dir
+   BUILD_TMP_DIR=$(python3 -c "import json; print(json.load(open('reports/<pkg>/build_meta.json'))['build_tmp_dir'])")
+   
+   # 调用 fetch_missing_deps.sh
+   bash skills/bin2linyaps.external-missing-deps-fetch/scripts/fetch_missing_deps.sh \
+     --project-dir=<project_dir> \
+     --build-tmp-dir=${BUILD_TMP_DIR}
+   ```
+
 3. **效果**：
    - 更新 `templates/linglong.yaml` 的 `buildext.apt.depends`（保留 `${ll_version}` 等 envsubst 变量）
 - 生成 `missing_deps_urls.conf`（URL 配置，可人工编辑）
@@ -539,6 +597,7 @@ b. **创建任务列表**
 - **失败处理**: 如果验证失败，根据错误类型决定是否调用 `bin2linyaps.fix`
 
 ##### Step 3: 兼容性测试（仅当 COMPAT_TESTING_ENABLED=true 时执行） (tar 包)
+##### Step 3: 兼容性测试 (tar 包)
 调用 \`bin2linyaps.compat-testing\` skill 自动化执行：
 
 1. **构造子任务 JSON**（从 agent-config 和当前项目信息组装）
@@ -548,6 +607,7 @@ b. **创建任务列表**
 - **输出**: 测试报告（汇总 + 分步骤详情）
 
 ##### Step 3.5: 缺失依赖修复（条件执行，依赖 Step 3 的构建产物）
+##### Step 3.5: 缺失依赖修复（条件执行）
 如果前一阶段的兼容性测试生成了 `missing_deps.json` 或 `missing_deps.csv`，调用 \`bin2linyaps.external-missing-deps-fetch\` skill 自动修复模板依赖：
 
 1. **检查构建元数据**：读取 `reports/<pkg>/build_meta.json`，检查 `missing_deps_json` 或 `missing_deps_csv` 是否为非 null
@@ -605,6 +665,7 @@ b. **创建任务列表**
 - **失败处理**: 如果验证失败，根据错误类型决定是否调用 `bin2linyaps.fix`
 
 ##### Step 3: 兼容性测试（仅当 COMPAT_TESTING_ENABLED=true 时执行） (AppImage 包)
+##### Step 3: 兼容性测试 (AppImage 包)
 调用 \`bin2linyaps.compat-testing\` skill 自动化执行：
 
 1. **构造子任务 JSON**（从 agent-config 和当前项目信息组装）
@@ -614,6 +675,7 @@ b. **创建任务列表**
 - **输出**: 测试报告（汇总 + 分步骤详情）
 
 ##### Step 3.5: 缺失依赖修复（条件执行，依赖 Step 3 的构建产物）
+##### Step 3.5: 缺失依赖修复（条件执行）
 如果前一阶段的兼容性测试生成了 `missing_deps.json` 或 `missing_deps.csv`，调用 \`bin2linyaps.external-missing-deps-fetch\` skill 自动修复模板依赖：
 
 1. **检查构建元数据**：读取 `reports/<pkg>/build_meta.json`，检查 `missing_deps_json` 或 `missing_deps_csv` 是否为非 null
