@@ -29,7 +29,7 @@ permission:
     "projects_repo": "<Git 倉庫 URL>",
     "base": "<基礎運行環境>",
     "runtime": "<運行時環境>",
-    "output_dir": "<產出目錄，支援 ${tag} 佔位符>",
+    "output_dir": "<已解析的绝对产出目录>",
     "data_dir": "<數據記錄目錄>",
     "build_tmp_dir": "<構建緩存目錄>",
     "src_dir": "<資源下載目錄>"
@@ -67,8 +67,8 @@ permission:
 | `base` | 玲瓏基礎運行環境 | `org.deepin.base/25.2.2` |
 | `runtime` | 玲瓏運行時環境 | `org.deepin.runtime.dtk/25.2.2` |
 | `projects_root` | 本地項目目錄 | `./projects` |
-| `output_dir` | 產出目錄 | `./output/${tag}` |
-| `data_dir` | 數據記錄目錄 | `./data/${tag}.log` |
+| `output_dir` | 產出目錄 | `<已解析的绝对路径>` |
+| `data_dir` | 數據記錄目錄 | `<已解析的绝对路径>` |
 | `build_tmp_dir` | 構建緩存目錄 | `./build_cache` |
 | `src_dir` | 資源下載目錄 | `./src` |
 
@@ -78,12 +78,8 @@ permission:
 3. `agent-config.json` 的 `global` 區段（fallback）
 4. agent.md 中的硬編碼預設值（最低優先級）
 
-**⚠️ `${tag}` 路徑即時解析規則（必須遵守）**
-`agent-config.json` 中的路徑可能包含 `${tag}` 佔位符。**你必須在 Phase 1 載入配置後立即執行：**
-1. 運行 `date +"%Y-%m-%d"` 獲取當天日期（如 `2026-06-11`）
-2. 將所有含 `${tag}` 的路徑替換為完整路徑（例如 `./output/${tag}` → `./output/2026-06-11`）
-3. **記錄解析後的完整路徑**，後續所有步驟均使用完整路徑，不再出現 `${tag}`
-4. **禁止**將 `${tag}` 原樣傳遞給任何 bash 命令、mkdir、curl 或其他工具
+**运行时路径规则（必须遵守）**
+入口必须显式传入并校验绝对 `agent_config_path`、workspace 和 skills 根目录；`output_dir`/`data_dir` 使用已解析配置值。运行时不得含 `${tag}` 或依赖日期生成路径。
 
 ---
 
@@ -218,6 +214,10 @@ permission:
 > **注意**：所有腳本調用使用相對於 `WORKSPACE_ROOT` 的路徑，**不要**使用 `cd` 切換工作目錄後再執行。
 > **用戶不可獨立調用**：所有子 skill 設置為 `user-invocable: false`，只能通過 agent 工作流間接使用。
 
+### Multica 任务身份
+
+平台 handoff 后必须提取 `Your assigned issue ID: <UUID>`，严格校验完整小写 UUID，并执行 `export MULTICA_ISSUE_TASK_ID=<UUID>`；所有子 skill、runner 和最终状态回报继承该变量。不得从 issue 列表首项、历史评论或 workspace 推断任务。缺失、非法或与 pkgName/arch/type 不一致时终止为结构化 `blocked`，不发送任何评论、指派或状态请求。
+
 ## 工作流程
 
 ### Phase 1: 初始化
@@ -230,7 +230,7 @@ permission:
    - 解析 `version_extract_examples` 版本提取規則
    - **若文件不存在**：使用 agent.md 中的硬編碼預設值
 
-2. **`${tag}` 路徑即時解析**：按「全局聲明」的「`${tag}` 路徑即時解析規則」執行（運行 `date +"%Y-%m-%d"` → 替換所有含 `${tag}` 路徑 → 記錄固化完整路徑）。
+2. 运行时禁止 `${tag}` 和日期路径命名；入口传入已解析的绝对配置路径和值。
 
 3. **載入順序（優先級從高到低）**：
    - CSV 顯式字段（如 `base`、`runtime`）> 任務 JSON 的 `global` 區段 > `agent-config.json` > agent.md 預設值
