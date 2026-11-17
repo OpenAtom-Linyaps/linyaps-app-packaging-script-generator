@@ -393,7 +393,16 @@ build_pak() {
   # 注意：此操作必须在所有文件复制和路径处理完成之后进行
   if [ -n "${binary_name}" ]; then
     # 在 binary/ 目录下查找二进制文件
+    # 先按可执行权限查找
     actual_binary=$(find "${binary_dir}" -type f -name "${binary_name}" -executable 2>/dev/null | head -n 1)
+    if [ -z "${actual_binary}" ]; then
+      # Fallback: 仅按名称查找（检测文件存在但无执行权限）
+      actual_binary=$(find "${binary_dir}" -type f -name "${binary_name}" 2>/dev/null | head -n 1)
+      if [ -n "${actual_binary}" ]; then
+        echo "[Warning] Binary '${binary_name}' found but is not executable: ${actual_binary}" >&2
+        echo "[Warning] Desktop Exec entry points to a non-executable file." >&2
+      fi
+    fi
     
     if [ -n "${actual_binary}" ]; then
       rel_binary="${actual_binary#${binary_dir}}"
@@ -638,7 +647,16 @@ build_pak() {
   # 注意：此操作必须在所有文件复制和路径处理完成之后进行
   if [ -n "${binary_name}" ]; then
     # 在 binary/ 目录下查找二进制文件
+    # 先按可执行权限查找
     actual_binary=$(find "${binary_dir}" -type f -name "${binary_name}" -executable 2>/dev/null | head -n 1)
+    if [ -z "${actual_binary}" ]; then
+      # Fallback: 仅按名称查找（检测文件存在但无执行权限）
+      actual_binary=$(find "${binary_dir}" -type f -name "${binary_name}" 2>/dev/null | head -n 1)
+      if [ -n "${actual_binary}" ]; then
+        echo "[Warning] Binary '${binary_name}' found but is not executable: ${actual_binary}" >&2
+        echo "[Warning] Desktop Exec entry points to a non-executable file." >&2
+      fi
+    fi
     
     if [ -n "${actual_binary}" ]; then
       rel_binary="${actual_binary#${binary_dir}}"

@@ -68,11 +68,13 @@ class DirectoryStructureValidator:
         "scalable",
     ]
 
-    # Valid icon extensions
-    VALID_ICON_EXTENSIONS = {".png", ".jpg", ".jpeg", ".svg", ".svgz"}
+    # Valid icon extensions (XDG spec + common practice)
+    VALID_ICON_EXTENSIONS = {".png", ".jpg", ".jpeg", ".svg", ".svgz", ".xpm",
+                             ".tiff", ".tif", ".gif", ".bmp", ".ico", ".xbm"}
 
     # Fixed-size icon extensions (not scalable)
-    FIXED_SIZE_EXTENSIONS = {".png", ".jpg", ".jpeg"}
+    FIXED_SIZE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".xpm",
+                             ".tiff", ".tif", ".gif", ".bmp", ".ico", ".xbm"}
 
     def __init__(self, input_dir: str):
         self.input_dir = Path(input_dir).resolve()
@@ -160,6 +162,12 @@ class DirectoryStructureValidator:
         elif icon_field.startswith("/"):
             result.add_fail(
                 str(desktop_file), f"Icon field uses absolute path: {icon_field}"
+            )
+            file_valid = False
+        elif any(icon_field.lower().endswith(ext) for ext in self.VALID_ICON_EXTENSIONS):
+            result.add_fail(
+                str(desktop_file),
+                f"Icon field contains file extension, XDG spec requires icon name without extension: {icon_field}",
             )
             file_valid = False
         else:

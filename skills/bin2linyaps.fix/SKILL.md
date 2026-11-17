@@ -317,7 +317,7 @@ def fix_yaml_command(yaml_path: str, desktop_exec: str):
 
 ```python
 def fix_desktop_icon(desktop_path: str):
-    """修复Icon字段为相对路径"""
+    """修复Icon字段为相对路径且不带扩展名（符合XDG规范）"""
     with open(desktop_path, 'r') as f:
         lines = f.readlines()
     
@@ -325,9 +325,8 @@ def fix_desktop_icon(desktop_path: str):
     for line in lines:
         if line.startswith('Icon='):
             icon_path = line.split('=', 1)[1].strip()
-            # 去除绝对路径前缀
-            if icon_path.startswith('/'):
-                # 提取图标名（不含扩展名）
+            if icon_path:
+                # 去除绝对路径前缀，再剥离扩展名
                 icon_name = Path(icon_path).stem
                 line = f'Icon={icon_name}\n'
         fixed_lines.append(line)
@@ -408,7 +407,7 @@ def fix_icon_directory_structure(icons_dir: str):
     
     # 整理图标文件
     for icon_file in icons_path.rglob('*'):
-        if icon_file.is_file() and icon_file.suffix in ['.png', '.svg', '.svgz', '.xpm']:
+        if icon_file.is_file() and icon_file.suffix in ['.png', '.svg', '.svgz', '.xpm', '.jpg', '.jpeg', '.tiff', '.tif', '.gif', '.bmp', '.ico', '.xbm']:
             # 确定目标目录
             if icon_file.suffix == '.svg':
                 target_dir = hicolor_dir / 'scalable' / 'apps'
