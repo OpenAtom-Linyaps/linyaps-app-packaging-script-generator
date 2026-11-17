@@ -348,6 +348,46 @@ com.example.app,x86_64,1.0.0,https://example.com/app.deb
 
 #### 1.4 单包处理模式
 
+
+#### 1.3 批量初始化模式（推荐）
+
+使用 `batch_init.sh` 脚本批量创建项目：
+```bash
+# CSV 格式批量初始化
+./scripts/batch_init.sh tasks.csv --projects_root=./projects
+
+# JSON 格式批量初始化
+./scripts/batch_init.sh task.json --projects_root=./projects
+
+# 仅生成项目结构，不执行打包
+./scripts/batch_init.sh tasks.csv --dry-run
+```
+
+**CSV 格式**：
+```csv
+包名,架构,版本,下载地址
+com.example.app,x86_64,1.0.0,https://example.com/app.deb
+```
+
+**JSON 格式**：
+```json
+{
+  "global": {
+    "projects_root": "./projects"
+  },
+  "tasks": [
+    {
+      "pkgName": "com.example.app",
+      "arch": "x86_64",
+      "orig_version": "1.0.0",
+      "src_url": "https://example.com/app.deb"
+    }
+  ]
+}
+```
+
+#### 1.4 单包处理模式
+
 对于单个包，使用以下流程：
 
 a. **加载CSV配置**（如果存在）
@@ -460,12 +500,72 @@ b. **创建任务列表**
    bash skills/bin2linyaps.compat-testing/scripts/run_tasks.sh <subtask.json>
    ```
 
+
 4. **读取报告**：解析各任务的 `report.json`
    - 全部 `passed` → 兼容性测试通过
    - 存在 `failed` → 调用 `bin2linyaps.fix`
    - **输出**: 测试报告（汇总 + 分步骤详情）
 
 #### Step 5.5: 缺失依赖修复（条件执行，依赖 Step 5 的构建产物）
+如果前一阶段的兼容性测试生成了 `missing_deps.json` 或 `missing_deps.csv`，调用 \`bin2linyaps.external-missing-deps-fetch\` skill 自动修复模板依赖：
+
+1. **检查构建元数据**：读取 `reports/<pkg>/build_meta.json`，检查 `missing_deps_json` 或 `missing_deps_csv` 是否为非 null
+   - 非 null → 存在缺失依赖，继续执行
+   - null → 跳过，无缺失依赖
+
+2. **执行缺失依赖获取**：
+   ```bash
+   # 从 build_meta.json 读取 build_tmp_dir
+   BUILD_TMP_DIR=$(python3 -c "import json; print(json.load(open('reports/<pkg>/build_meta.json'))['build_tmp_dir'])")
+   
+   # 调用 fetch_missing_deps.sh
+   bash skills/bin2linyaps.external-missing-deps-fetch/scripts/fetch_missing_deps.sh \
+     --project-dir=<project_dir> \
+     --build-tmp-dir=${BUILD_TMP_DIR}
+   ```
+
+
+#### Step 5: 兼容性测试
+调用 \`bin2linyaps.compat-testing\` skill 自动化执行：
+
+1. **构造子任务 JSON**（从 agent-config 和当前项目信息组装）：
+   ```json
+   {
+     "global": {
+       "projects_root": "<projects_root>",
+       "output_dir": "<output_dir>",
+       "build_tmp_dir": "<build_tmp_dir>",
+       "src_dir": "<src_dir>"
+     },
+     "tasks": [
+       {
+         "pkgName": "<package_id>",
+         "src_url": "<src_url>",
+         "arch": "<arch>",
+         "orig_version": "<version>"
+       }
+     ]
+   }
+   ```
+
+2. **前置检测**（可选）：
+   ```bash
+   bash skills/bin2linyaps.compat-testing/scripts/validate_projects.sh \
+     --task-file=<subtask.json> --output=reports/precheck.json
+   ```
+
+3. **执行全流程测试**：
+   ```bash
+   bash skills/bin2linyaps.compat-testing/scripts/run_tasks.sh <subtask.json>
+   ```
+
+4. **读取报告**：解析各任务的 `report.json`
+   - 全部 `passed` → 兼容性测试通过
+   - 存在 `failed` → 调用 `bin2linyaps.fix`
+   - **输出**: 测试报告（汇总 + 分步骤详情）
+
+#### Step 5.5: 缺失依赖修复（条件执行，依赖 Step 5 的构建产物）
+#### Step 5.5: 缺失依赖修复（条件执行）
 如果前一阶段的兼容性测试生成了 `missing_deps.json` 或 `missing_deps.csv`，调用 \`bin2linyaps.external-missing-deps-fetch\` skill 自动修复模板依赖：
 
 1. **检查构建元数据**：读取 `reports/<pkg>/build_meta.json`，检查 `missing_deps_json` 或 `missing_deps_csv` 是否为非 null
@@ -539,6 +639,7 @@ b. **创建任务列表**
 - **失败处理**: 如果验证失败，根据错误类型决定是否调用 `bin2linyaps.fix`
 
 ##### Step 3: 兼容性测试（仅当 COMPAT_TESTING_ENABLED=true 时执行） (tar 包)
+##### Step 3: 兼容性测试 (tar 包)
 调用 \`bin2linyaps.compat-testing\` skill 自动化执行：
 
 1. **构造子任务 JSON**（从 agent-config 和当前项目信息组装）
@@ -614,6 +715,90 @@ b. **创建任务列表**
 - **输出**: 测试报告（汇总 + 分步骤详情）
 
 ##### Step 3.5: 缺失依赖修复（条件执行，依赖 Step 3 的构建产物）
+如果前一阶段的兼容性测试生成了 `missing_deps.json` 或 `missing_deps.csv`，调用 \`bin2linyaps.external-missing-deps-fetch\` skill 自动修复模板依赖：
+
+1. **检查构建元数据**：读取 `reports/<pkg>/build_meta.json`，检查 `missing_deps_json` 或 `missing_deps_csv` 是否为非 null
+   - 非 null → 存在缺失依赖，继续执行
+   - null → 跳过，无缺失依赖
+
+2. **执行缺失依赖获取**：
+   ```bash
+   bash skills/bin2linyaps.external-missing-deps-fetch/scripts/fetch_missing_deps.sh \
+     --project-dir=<project_dir> \
+     --build-tmp-dir=$(python3 -c "import json;print(json.load(open('reports/<pkg>/build_meta.json'))['build_tmp_dir'])")
+   ```
+
+
+##### Step 3.5: 缺失依赖修复（条件执行，依赖 Step 3 的构建产物）
+##### Step 3.5: 缺失依赖修复（条件执行）
+如果前一阶段的兼容性测试生成了 `missing_deps.json` 或 `missing_deps.csv`，调用 \`bin2linyaps.external-missing-deps-fetch\` skill 自动修复模板依赖：
+
+1. **检查构建元数据**：读取 `reports/<pkg>/build_meta.json`，检查 `missing_deps_json` 或 `missing_deps_csv` 是否为非 null
+   - 非 null → 存在缺失依赖，继续执行
+   - null → 跳过，无缺失依赖
+
+2. **执行缺失依赖获取**：
+   ```bash
+   bash skills/bin2linyaps.external-missing-deps-fetch/scripts/fetch_missing_deps.sh \
+     --project-dir=<project_dir> \
+     --build-tmp-dir=$(python3 -c "import json;print(json.load(open('reports/<pkg>/build_meta.json'))['build_tmp_dir'])")
+   ```
+
+3. **只执行一次**，不重复循环
+- **输出**: 更新后的 `templates/linglong.yaml` + 下载脚本
+
+##### Step 4: 问题修复（如需要）
+
+##### Step 5: 完成
+- 保存工程到最终位置
+- 清理临时文件
+- 更新任务状态
+
+#### 路径 C: AppImage 包处理
+
+对每个 AppImage 包执行以下步骤：
+
+##### Step 1: AppImage 分析与工程生成
+调用 \`bin2linyaps.appimage.transfer\` skill（整合了分析与工程生成）：
+- 提取 AppImage 元数据（包名、版本、架构）
+- 解压 AppImage 文件
+- 解析 Exec 命令（从 desktop 文件提取或自动检测）
+- 生成工程目录 `CI_ll_<package_id>`
+- 生成 `pak_linyaps.sh` 脚本（AppImage 专用版）
+- 生成 `linglong.yaml` 模板
+- 拷贝共享脚本到工程 `scripts/` 目录
+- **输出**: 工程目录路径
+
+**⚠️ 重要约束**：
+- `pak_linyaps.sh` 必须从 `skills/bin2linyaps.appimage.transfer/templates/pak_linyaps.sh` **完整复制**
+- **禁止简化**脚本内容，包括删除脚本调用或合并函数
+- `linglong.yaml` 的 `command` 字段在模板中为空字符串 `""`，由 `pak_linyaps.sh` 在构建时通过 wrapper 机制动态设置
+- **禁止**在 envsubst 阶段导出 `command` 变量
+- 模板文件路径：`templates/linglong.yaml`、`templates/files_res`
+
+##### Step 2: 项目结构验证
+调用 \`bin2linyaps.validate-structure\` skill：
+- 验证工程目录结构完整性
+- 检查必要文件是否存在（如 `pak_linyaps.sh`、`linglong.yaml`）
+- 检查 `scripts/extract_appimage.sh` 存在且可执行
+- 检查 `templates/files_res/share/applications/*.desktop` 至少存在1个
+- 检查 `templates/files_res/share/icons/hicolor` 目录结构
+- 验证脚本文件可执行权限
+- **输出**: 验证报告（JSON格式）
+- **失败处理**: 如果验证失败，根据错误类型决定是否调用 `bin2linyaps.fix`
+
+##### Step 3: 兼容性测试（仅当 COMPAT_TESTING_ENABLED=true 时执行） (AppImage 包)
+##### Step 3: 兼容性测试 (AppImage 包)
+调用 \`bin2linyaps.compat-testing\` skill 自动化执行：
+
+1. **构造子任务 JSON**（从 agent-config 和当前项目信息组装）
+2. **前置检测**（可选）：`validate_projects.sh --task-file=<subtask.json>`
+3. **执行全流程测试**：`run_tasks.sh <subtask.json>`
+4. **读取报告**：全部 `passed` → 通过；存在 `failed` → 调用 `bin2linyaps.fix`
+- **输出**: 测试报告（汇总 + 分步骤详情）
+
+##### Step 3.5: 缺失依赖修复（条件执行，依赖 Step 3 的构建产物）
+##### Step 3.5: 缺失依赖修复（条件执行）
 如果前一阶段的兼容性测试生成了 `missing_deps.json` 或 `missing_deps.csv`，调用 \`bin2linyaps.external-missing-deps-fetch\` skill 自动修复模板依赖：
 
 1. **检查构建元数据**：读取 `reports/<pkg>/build_meta.json`，检查 `missing_deps_json` 或 `missing_deps_csv` 是否为非 null
@@ -753,6 +938,35 @@ bash skills/bin2linyaps.validate-structure/scripts/validate_project_structure.sh
 
 # 自动修复权限问题
 bash skills/bin2linyaps.validate-structure/scripts/validate_project_structure.sh <project_dir> --fix
+```
+
+### 执行兼容性全流程测试（推荐）
+```bash
+# Step 1: 构造子任务 JSON 并保存为 subtask.json
+# Step 2: 可选前置检测
+bash skills/bin2linyaps.compat-testing/scripts/validate_projects.sh \
+  --task-file=subtask.json --output=reports/precheck.json
+
+# Step 3: 执行 5 步测试管线
+bash skills/bin2linyaps.compat-testing/scripts/run_tasks.sh subtask.json
+
+# Step 4: 读取汇总报告
+cat output/reports/summary.json
+```
+
+### 前置检测
+```bash
+# 检查项目目录完整性（pak_linyaps.sh、linglong.yaml、desktop 等）
+bash skills/bin2linyaps.compat-testing/scripts/validate_projects.sh \
+  --task-file=subtask.json --output=reports/precheck.json
+
+# 或直接指定包名
+bash skills/bin2linyaps.compat-testing/scripts/validate_projects.sh \
+  --pkg-name=com.example.app --projects-root=./projects
+```
+
+### 单步骤独立调用（调试用）
+```bash
 ```
 
 ### 执行兼容性全流程测试（推荐）
