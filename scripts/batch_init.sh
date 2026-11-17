@@ -8,7 +8,7 @@
 #
 # 选项:
 #   --projects_root=<path>   项目根目录 (默认: ./projects)
-#   --template-dir=<path>    模板目录 (默认: skills/linglong-project-gen/templates)
+#   --template-dir=<path>    模板目录 (默认: skills/bin2linyaps.deb.project-gen/templates)
 #   --config=<config.json>   JSON 配置文件 (仅含 global 部分)
 #   --output=<file.json>     输出 JSON 文件 (默认: /tmp/linyaps_tasks_<timestamp>.json)
 #   --dry-run                仅生成项目结构，不执行打包
@@ -37,7 +37,7 @@ log_err()   { echo -e "${RED}[ERROR]${NC} $*"; }
 # 默认配置
 # ============================================================
 DEFAULT_PROJECTS_ROOT="./projects"
-DEFAULT_TEMPLATE_DIR="${WORKSPACE_ROOT}/skills/linglong-project-gen/templates"
+DEFAULT_TEMPLATE_DIR="${WORKSPACE_ROOT}/skills/bin2linyaps.deb.project-gen/templates"
 
 # ============================================================
 # 使用说明
@@ -57,7 +57,7 @@ CSV 字段映射:
 
 选项:
   --projects_root=<path>   项目根目录 (默认: ./projects)
-  --template-dir=<path>    模板目录 (默认: skills/linglong-project-gen/templates)
+  --template-dir=<path>    模板目录 (默认: skills/bin2linyaps.deb.project-gen/templates)
   --config=<config.json>   JSON 配置文件 (仅含 global 部分)
   --output=<file.json>     输出 JSON 文件 (默认: /tmp/linyaps_tasks_<timestamp>.json)
   --dry-run                仅生成项目结构，不执行打包
@@ -311,8 +311,8 @@ create_project_structure() {
     mkdir -p "${project_dir}/config"
 
     # 拷贝辅助脚本
-    if [[ -f "${WORKSPACE_ROOT}/skills/linglong-project-gen/scripts/handle_special_paths.sh" ]]; then
-        cp "${WORKSPACE_ROOT}/skills/linglong-project-gen/scripts/handle_special_paths.sh" "${project_dir}/scripts/"
+    if [[ -f "${WORKSPACE_ROOT}/skills/bin2linyaps.deb.project-gen/scripts/handle_special_paths.sh" ]]; then
+        cp "${WORKSPACE_ROOT}/skills/bin2linyaps.deb.project-gen/scripts/handle_special_paths.sh" "${project_dir}/scripts/"
         chmod +x "${project_dir}/scripts/handle_special_paths.sh"
     fi
 
@@ -320,8 +320,8 @@ create_project_structure() {
     if [[ -f "${WORKSPACE_ROOT}/skills/config/base_runtime_whitelist.conf" ]]; then
         cp "${WORKSPACE_ROOT}/skills/config/base_runtime_whitelist.conf" "${project_dir}/config/"
         log_info "已拷贝全局白名单配置到工程目录"
-    elif [[ -f "${WORKSPACE_ROOT}/skills/linglong-project-gen/config/base_runtime_whitelist.conf" ]]; then
-        cp "${WORKSPACE_ROOT}/skills/linglong-project-gen/config/base_runtime_whitelist.conf" "${project_dir}/config/"
+    elif [[ -f "${WORKSPACE_ROOT}/skills/bin2linyaps.deb.project-gen/config/base_runtime_whitelist.conf" ]]; then
+        cp "${WORKSPACE_ROOT}/skills/bin2linyaps.deb.project-gen/config/base_runtime_whitelist.conf" "${project_dir}/config/"
         log_info "已拷贝 skill 级别白名单配置到工程目录"
     fi
 
