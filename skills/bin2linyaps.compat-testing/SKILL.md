@@ -4,8 +4,6 @@ description: >
   玲珑打包兼容性测试（可选步骤）。仅在用户提示词包含"兼容测试"时触发。
   执行 YAML 校验 → 目录结构校验 → pak_linyaps.sh 构建 → 运行时兼容性检测 → 生成 JSON 报告。
   接收任务 JSON，对每个 project 执行 5 步测试管线。
-  自动执行玲珑打包全流程测试：YAML 校验 → 目录结构校验 → pak_linyaps.sh 构建 →
-  运行时兼容性检测 → 生成 JSON 报告。接收任务 JSON，对每个 project 执行 5 步测试管线。
 user-invocable: false
 ---
 
