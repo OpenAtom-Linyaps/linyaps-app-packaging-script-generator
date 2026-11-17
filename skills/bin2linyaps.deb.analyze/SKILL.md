@@ -124,7 +124,27 @@ depends = parse_depends("libssl1.1 (>= 1.1.1), libcurl4:amd64, libc6")
 # 返回: ["libssl1.1", "libcurl4", "libc6"]
 ```
 
-### 5. 版本转换
+### 5. 运行时依赖存在性核验（写入门禁）
+
+> 任一写入 `buildext.apt.depends` 的运行时依赖，必须先通过 apt 仓库存在性核验；不存在的包一律剔除。
+> 探测模块 `scripts/depends.py` 仅供本 skill（analyze）内部使用，其他 skill 禁止跨 skill import。
+
+```python
+import sys
+sys.path.insert(0, "scripts")
+from depends import filter_existing_runtime_depends, package_exists
+
+package_exists("libc6")   # True（stdout 出现 Package:）
+package_exists("no-such-pkg")  # False
+
+# 逐包过滤：仅返回存在于当前 apt 仓库的依赖
+verified = filter_existing_runtime_depends(["libc6", "libgio-2.0-dev-bin", "no-such-pkg"])
+# 返回: ["libc6", "libgio-2.0-dev-bin"]（不存在的已剔除并打印 WARNING）
+```
+
+**判定标准**：单包 `apt-cache show <pkg>` 的 stdout 是否含 `Package:` 记录。不依赖 returncode（apt 2.8 下 `LC_ALL=C` 时缺失包也返回 0），也不依赖英文/本地化错误文案正则。写完前 `generate_linglong_yaml()` 会自动调用本过滤。
+
+### 6. 版本转换
 
 ```python
 import sys
@@ -135,7 +155,7 @@ ll_version = convert_version_to_linglong("1.85.2-1")
 # 返回: "1.85.2.1" (玲珑格式 x.x.x.x)
 ```
 
-### 6. 架构映射
+### 7. 架构映射
 
 ```python
 import sys

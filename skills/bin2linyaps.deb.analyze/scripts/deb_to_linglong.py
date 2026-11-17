@@ -38,6 +38,8 @@ import tarfile
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
+from depends import filter_existing_runtime_depends
+
 try:
     import yaml
 except ImportError:
@@ -426,6 +428,8 @@ def generate_linglong_yaml(
 
     # 解析依赖
     depends = parse_depends(deb_info.get("Depends"))
+    # 存在性校验主防线：不存在于当前 apt 仓库的包禁止写入 buildext.apt.depends
+    depends = filter_existing_runtime_depends(depends)
     depends_str = "\n      - " + "\n      - ".join(depends) if depends else " []"
 
     # 处理 runtime 行

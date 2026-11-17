@@ -109,8 +109,28 @@ export -f search_package log_warn
 cat "$SO_LIST" | xargs -P "$(nproc)" -I{} bash -c 'search_package "$@"' _ {} | sort -u > "$PKG_LIST"
 
 PKG_COUNT=$(wc -l < "$PKG_LIST")
-log_info "搜索到 $PKG_COUNT 个相关包名"
 [ "$PKG_COUNT" -eq 0 ] && { log_info "没有搜索到任何包名，无需更新"; exit 0; }
+
+# ==== 写入门禁：存在性校验主防线 ====
+# apt-file 可能命中 Contents 索引中存在、但当前 apt 仓库中不存在/无法下载的包名。
+# 逐包独立通过 apt-cache show 核验（以 stdout 出现 "Package:" 为准，不依赖 rc/本地化文案）；
+# 不存在的包一律剔除，不允许写入 buildext.apt.depends。
+log_info "开始逐包核验 apt 仓库存在性（${PKG_COUNT} 个包）..."
+VERIFIED_PKG_LIST="${TEMP_DIR}/verified_pkg_list.txt"
+: > "$VERIFIED_PKG_LIST"
+TOTAL_PKGS_SAVED=$PKG_COUNT
+while IFS= read -r pkg; do
+    [ -z "$pkg" ] && continue
+    if apt-cache show "${pkg%% *}" 2>/dev/null | grep -q '^Package:'; then
+        echo "$pkg" >> "$VERIFIED_PKG_LIST"
+    else
+        log_warn "包 $pkg 在当前 apt 仓库中不存在，已剔除"
+    fi
+done < "$PKG_LIST"
+PKG_COUNT=$(wc -l < "$VERIFIED_PKG_LIST")
+log_info "核验后保留 $PKG_COUNT 个可用包（剔除 $((TOTAL_PKGS_SAVED - PKG_COUNT)) 个）"
+[ "$PKG_COUNT" -eq 0 ] && { log_info "核验后无可用包，无需更新"; exit 0; }
+PKG_LIST="$VERIFIED_PKG_LIST"
 
 # ==== 关键：只修改 templates/linglong.yaml（源模板），不碰 build_tmp 中的副本 ====
 YAML_FILE="${PROJECT_DIR}/templates/linglong.yaml"
