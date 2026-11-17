@@ -122,11 +122,12 @@ permission:
 
 ### pak_linyaps.sh 生成约束（重要！）
 
-#### deb 版（linglong-project-gen）
+#### deb 版（bin2linyaps.deb.project-gen）
 
 - **DO NOT** 简化或删除 `pak_linyaps.sh` 中的脚本调用
   - 必须保留 `dedup_desktop_files.sh` 调用（desktop 文件去重）
   - 必须保留 `validate_bin_nesting.sh` 调用（bin 目录嵌套验证）
+  - 必须保留 `fix_nonstd_lib_symlinks.sh` 调用（非标准目录 .so 软链修复）
   - 必须保留 `handle_special_paths.sh` 调用（特殊路径处理）
 
 - **DO NOT** 在 `pak_linyaps.sh` 的 envsubst 阶段导出或填充 `command` 变量
@@ -142,7 +143,7 @@ permission:
   - 不得简化 wrapper 生成逻辑
   - 不得跳过 desktop 文件去重和 bin 目录验证
 
-#### tar 版（tar-linyaps）
+#### tar 版（bin2linyaps.tar.transfer）
 
 - **DO NOT** 简化或删除 `pak_linyaps.sh` 中的脚本调用
   - 必须保留 `handle_special_paths.sh` 调用（路径转换 + 特殊字符标准化 + 软链修复）
@@ -161,10 +162,10 @@ permission:
   - 不得简化 wrapper 生成逻辑
 
 - **REQUIRE** 工程目录必须包含 `scripts/handle_special_paths.sh`
-  - 从 `skills/linglong-project-gen/templates/scripts/handle_special_paths.sh` 拷贝
+  - 从 `skills/bin2linyaps.deb.project-gen/templates/scripts/handle_special_paths.sh` 拷贝
   - 与 deb 版共用同一脚本，处理 `/usr/`、`/opt/` 等路径层级剥离
 
-#### appimage 版（appimage-linyaps）
+#### appimage 版（bin2linyaps.appimage.transfer）
 
 - **DO NOT** 简化或删除 `pak_linyaps.sh` 中的脚本调用
   - 必须保留 `extract_appimage.sh` 调用（AppImage 解压）
@@ -194,14 +195,14 @@ permission:
 
 | Skill | 路径 | 核心脚本 | 模板/资源 |
 |-------|------|---------|-----------|
-| deb-analysis | `skills/deb-analysis/` | `scripts/deb_to_linglong.py` | — |
-| linglong-project-gen | `skills/linglong-project-gen/` | `templates/pak_linyaps.sh` | `templates/*.yaml`, `linglong.yaml` |
-| tar-linyaps | `skills/tar-linyaps/` | `scripts/scan_executables.sh` | `templates/pak_linyaps.sh`, `templates/linglong.yaml`, `templates/files_res` |
-| appimage-linyaps | `skills/appimage-linyaps/` | `scripts/extract_appimage.sh`, `scripts/resolve_exec_command.sh`, `scripts/parse_appimage_metadata.sh` | `templates/pak_linyaps.sh`, `templates/linglong.yaml` |
-| resource-collector | `skills/resource-collector/` | —（純 SKILL.md 指導型，無腳本） | — |
-| project-structure-validator | `skills/project-structure-validator/` | `scripts/validate_project_structure.sh` | — |
-| compat-testing | `skills/compat-testing/` | `scripts/common-data-verify.py`, `scripts/validate_linglong_yaml.py` | `scripts/demos/compat_checker.py` |
-| linglong-fix | `skills/linglong-fix/` | `scripts/fix_package_id.sh`, `scripts/validate_package_id.sh` | — |
+| bin2linyaps.deb.analyze | `skills/bin2linyaps.deb.analyze/` | `scripts/deb_to_linglong.py` | — |
+| bin2linyaps.deb.project-gen | `skills/bin2linyaps.deb.project-gen/` | `templates/pak_linyaps.sh` | `templates/*.yaml`, `linglong.yaml` |
+| bin2linyaps.tar.transfer | `skills/bin2linyaps.tar.transfer/` | `scripts/scan_executables.sh` | `templates/pak_linyaps.sh`, `templates/linglong.yaml`, `templates/files_res` |
+| bin2linyaps.appimage.transfer | `skills/bin2linyaps.appimage.transfer/` | `scripts/extract_appimage.sh`, `scripts/resolve_exec_command.sh`, `scripts/parse_appimage_metadata.sh` | `templates/pak_linyaps.sh`, `templates/linglong.yaml` |
+| bin2linyaps.deb.collect-resources | `skills/bin2linyaps.deb.collect-resources/` | —（純 SKILL.md 指導型，無腳本） | — |
+| bin2linyaps.validate-structure | `skills/bin2linyaps.validate-structure/` | `scripts/validate_project_structure.sh` | — |
+| bin2linyaps.compat-testing | `skills/bin2linyaps.compat-testing/` | `scripts/common-data-verify.py`, `scripts/validate_linglong_yaml.py` | `scripts/demos/compat_checker.py` |
+| bin2linyaps.fix | `skills/bin2linyaps.fix/` | `scripts/fix_package_id.sh`, `scripts/validate_package_id.sh` | — |
 
 **调用约定**：所有脚本调用均使用相對於 workspace 根目錄的路徑，**不要**使用 `cd` 切換工作目錄後再執行。
 
@@ -246,14 +247,14 @@ done
 直接使用內建 `skill` 工具載入（`.opencode/skills/` 符號連結已就位）：
 
 ```
-skill({ name: "deb-analysis" })
-skill({ name: "linglong-project-gen" })
-skill({ name: "tar-linyaps" })
-skill({ name: "appimage-linyaps" })
-skill({ name: "resource-collector" })
-skill({ name: "project-structure-validator" })
-skill({ name: "compat-testing" })
-skill({ name: "linglong-fix" })
+skill({ name: "bin2linyaps.deb.analyze" })
+skill({ name: "bin2linyaps.deb.project-gen" })
+skill({ name: "bin2linyaps.tar.transfer" })
+skill({ name: "bin2linyaps.appimage.transfer" })
+skill({ name: "bin2linyaps.deb.collect-resources" })
+skill({ name: "bin2linyaps.validate-structure" })
+skill({ name: "bin2linyaps.compat-testing" })
+skill({ name: "bin2linyaps.fix" })
 ```
 
 ### 其他客戶端 / Fallback
@@ -261,22 +262,22 @@ skill({ name: "linglong-fix" })
 直接讀取 `skills/*/SKILL.md` 文件（相對於 workspace 根目錄）：
 
 ```bash
-cat skills/deb-analysis/SKILL.md
-cat skills/linglong-project-gen/SKILL.md
+cat skills/bin2linyaps.deb.analyze/SKILL.md
+cat skills/bin2linyaps.deb.project-gen/SKILL.md
 ```
 
 ### Skills 符號連結結構
 
 ```
 .opencode/skills/          ← discovery 路徑（符號連結）
-├── deb-analysis         → ../../skills/deb-analysis
-├── resource-collector   → ../../skills/resource-collector
-├── linglong-project-gen → ../../skills/linglong-project-gen
-├── compat-testing       → ../../skills/compat-testing
-├── linglong-fix         → ../../skills/linglong-fix
-├── project-structure-validator → ../../skills/project-structure-validator
-├── tar-linyaps          → ../../skills/tar-linyaps
-└── appimage-linyaps     → ../../skills/appimage-linyaps
+├── bin2linyaps.deb.analyze         → ../../skills/bin2linyaps.deb.analyze
+├── bin2linyaps.deb.collect-resources   → ../../skills/bin2linyaps.deb.collect-resources
+├── bin2linyaps.deb.project-gen → ../../skills/bin2linyaps.deb.project-gen
+├── bin2linyaps.compat-testing       → ../../skills/bin2linyaps.compat-testing
+├── bin2linyaps.fix         → ../../skills/bin2linyaps.fix
+├── bin2linyaps.validate-structure → ../../skills/bin2linyaps.validate-structure
+├── bin2linyaps.tar.transfer          → ../../skills/bin2linyaps.tar.transfer
+└── bin2linyaps.appimage.transfer     → ../../skills/bin2linyaps.appimage.transfer
 ```
 
 > **注意**：所有腳本調用使用相對於 workspace 根目錄的路徑，**不要**使用 `cd` 切換工作目錄後再執行。
@@ -369,14 +370,14 @@ b. **创建任务列表**
 对每个 deb 包执行以下步骤：
 
 ##### Step 1: Deb分析
-调用 `deb-analysis` skill：
+调用 \`bin2linyaps.deb.analyze\` skill：
 - 解析deb元数据（包名、版本、架构、依赖）
 - 解压deb文件到临时目录
 - 提取文件结构信息
 - **输出**: deb信息JSON
 
 ##### Step 2: 工程生成
-调用 `linglong-project-gen` skill：
+调用 \`bin2linyaps.deb.project-gen\` skill：
 - 创建工程目录 `CI_ll_<package_id>`
 - 生成 `linglong.yaml` 模板
 - 生成 `pak_linyaps.sh` 脚本
@@ -385,14 +386,14 @@ b. **创建任务列表**
 - **输出**: 工程目录路径
 
 **⚠️ 重要约束**：
-- `pak_linyaps.sh` 必须从 `skills/linglong-project-gen/templates/pak_linyaps.sh` **完整复制**
+- `pak_linyaps.sh` 必须从 `skills/bin2linyaps.deb.project-gen/templates/pak_linyaps.sh` **完整复制**
 - **禁止简化**脚本内容，包括删除脚本调用或合并函数
 - `linglong.yaml` 的 `command` 字段在模板中为空字符串 `""`，由 `pak_linyaps.sh` 在构建时通过 wrapper 机制动态设置
 - **禁止**在 envsubst 阶段导出 `command` 变量
 - 模板文件路径：`templates/linglong.yaml`、`templates/files_res`
 
 #### Step 3: 资源收集
-调用 `resource-collector` skill：
+调用 \`bin2linyaps.deb.collect-resources\` skill：
 - 从deb解压目录提取资源
 - 整理desktop、icons、appdata等
 - **修复desktop文件Icon路径**（将绝对路径改为相对路径）
@@ -410,17 +411,17 @@ b. **创建任务列表**
 **提前修改 Exec 会导致 wrapper 机制失效**，因此资源收集阶段只修复 Icon 路径。
 
 #### Step 4: 项目结构验证
-调用 `project-structure-validator` skill：
+调用 \`bin2linyaps.validate-structure\` skill：
 - 验证工程目录结构完整性
 - 检查必要文件是否存在（如 `pak_linyaps.sh`、`linglong.yaml`）
 - 检查 `templates/files_res/share/applications/*.desktop` 至少存在1个
 - 检查 `templates/files_res/share/icons/hicolor` 目录结构
 - 验证脚本文件可执行权限
 - **输出**: 验证报告（JSON格式）
-- **失败处理**: 如果验证失败，根据错误类型决定是否调用 `linglong-fix`
+- **失败处理**: 如果验证失败，根据错误类型决定是否调用 `bin2linyaps.fix`
 
 #### Step 5: 兼容性测试
-调用 `compat-testing` skill：
+调用 \`bin2linyaps.compat-testing\` skill：
 - 验证linglong.yaml格式
 - **验证 `package.id`、`package.name`、`package.description` 不为空且不包含未解析变量引用**（如 `${package_id}`、`${app_name}`、`${description}`）
 - 验证资源目录结构
@@ -429,7 +430,7 @@ b. **创建任务列表**
 - **输出**: 测试报告
 
 #### Step 6: 问题修复（如需要）
-如果测试失败，调用 `linglong-fix` skill：
+如果测试失败，调用 \`bin2linyaps.fix\` skill：
 - 根据验证报告修复问题
 - 重新运行测试
 - **暂停**: 无法自动修复时询问用户
@@ -445,7 +446,7 @@ b. **创建任务列表**
 对每个 tar 归档包执行以下步骤：
 
 ##### Step 1: Tar 分析与工程生成
-调用 `tar-linyaps` skill（整合了分析与工程生成）：
+调用 \`bin2linyaps.tar.transfer\` skill（整合了分析与工程生成）：
 - 验证 tar 文件格式并解压
 - 检测源码包（发现 CMakeLists.txt/Makefile 等时）
   - 二進制包 → 掃描 desktop 文件、生成工程目錄，繼續 Step 2
@@ -461,7 +462,7 @@ b. **创建任务列表**
 - **输出**: 工程目录路径
 
 **⚠️ 重要约束**：
-- `pak_linyaps.sh` 必须从 `skills/tar-linyaps/templates/pak_linyaps.sh` **完整复制**
+- `pak_linyaps.sh` 必须从 `skills/bin2linyaps.tar.transfer/templates/pak_linyaps.sh` **完整复制**
 - **禁止简化**脚本内容，包括删除脚本调用或合并函数
 - `linglong.yaml` 的 `command` 字段在模板中为空字符串 `""`，由 `pak_linyaps.sh` 在构建时通过 wrapper 机制动态设置
 - **禁止**在 envsubst 阶段导出 `command` 变量
@@ -469,7 +470,7 @@ b. **创建任务列表**
 - 模板文件路径：`templates/linglong.yaml`、`templates/files_res`
 
 ##### Step 2: 项目结构验证
-调用 `project-structure-validator` skill：
+调用 \`bin2linyaps.validate-structure\` skill：
 - 验证工程目录结构完整性
 - 检查必要文件是否存在（如 `pak_linyaps.sh`、`linglong.yaml`）
 - 检查 `scripts/handle_special_paths.sh` 存在且可执行
@@ -477,10 +478,10 @@ b. **创建任务列表**
 - 检查 `templates/files_res/share/icons/hicolor` 目录结构
 - 验证脚本文件可执行权限
 - **输出**: 验证报告（JSON格式）
-- **失败处理**: 如果验证失败，根据错误类型决定是否调用 `linglong-fix`
+- **失败处理**: 如果验证失败，根据错误类型决定是否调用 `bin2linyaps.fix`
 
 ##### Step 3: 兼容性测试
-调用 `compat-testing` skill：
+调用 \`bin2linyaps.compat-testing\` skill：
 - 验证linglong.yaml格式
 - **验证 `package.id`、`package.name`、`package.description` 不为空且不包含未解析变量引用**（如 `${package_id}`、`${app_name}`、`${description}`）
 - 验证资源目录结构
@@ -489,7 +490,7 @@ b. **创建任务列表**
 - **输出**: 测试报告
 
 ##### Step 4: 问题修复（如需要）
-如果测试失败，调用 `linglong-fix` skill：
+如果测试失败，调用 \`bin2linyaps.fix\` skill：
 - 根据验证报告修复问题
 - 重新运行测试
 - **暂停**: 无法自动修复时询问用户
@@ -505,7 +506,7 @@ b. **创建任务列表**
 对每个 AppImage 包执行以下步骤：
 
 ##### Step 1: AppImage 分析与工程生成
-调用 `appimage-linyaps` skill（整合了分析与工程生成）：
+调用 \`bin2linyaps.appimage.transfer\` skill（整合了分析与工程生成）：
 - 提取 AppImage 元数据（包名、版本、架构）
 - 解压 AppImage 文件
 - 解析 Exec 命令（从 desktop 文件提取或自动检测）
@@ -516,14 +517,14 @@ b. **创建任务列表**
 - **输出**: 工程目录路径
 
 **⚠️ 重要约束**：
-- `pak_linyaps.sh` 必须从 `skills/appimage-linyaps/templates/pak_linyaps.sh` **完整复制**
+- `pak_linyaps.sh` 必须从 `skills/bin2linyaps.appimage.transfer/templates/pak_linyaps.sh` **完整复制**
 - **禁止简化**脚本内容，包括删除脚本调用或合并函数
 - `linglong.yaml` 的 `command` 字段在模板中为空字符串 `""`，由 `pak_linyaps.sh` 在构建时通过 wrapper 机制动态设置
 - **禁止**在 envsubst 阶段导出 `command` 变量
 - 模板文件路径：`templates/linglong.yaml`、`templates/files_res`
 
 ##### Step 2: 项目结构验证
-调用 `project-structure-validator` skill：
+调用 \`bin2linyaps.validate-structure\` skill：
 - 验证工程目录结构完整性
 - 检查必要文件是否存在（如 `pak_linyaps.sh`、`linglong.yaml`）
 - 检查 `scripts/extract_appimage.sh` 存在且可执行
@@ -531,10 +532,10 @@ b. **创建任务列表**
 - 检查 `templates/files_res/share/icons/hicolor` 目录结构
 - 验证脚本文件可执行权限
 - **输出**: 验证报告（JSON格式）
-- **失败处理**: 如果验证失败，根据错误类型决定是否调用 `linglong-fix`
+- **失败处理**: 如果验证失败，根据错误类型决定是否调用 `bin2linyaps.fix`
 
 ##### Step 3: 兼容性测试
-调用 `compat-testing` skill：
+调用 \`bin2linyaps.compat-testing\` skill：
 - 验证linglong.yaml格式
 - **验证 `package.id`、`package.name`、`package.description` 不为空且不包含未解析变量引用**（如 `${package_id}`、`${app_name}`、`${description}`）
 - 验证资源目录结构
@@ -543,7 +544,7 @@ b. **创建任务列表**
 - **输出**: 测试报告
 
 ##### Step 4: 问题修复（如需要）
-如果测试失败，调用 `linglong-fix` skill：
+如果测试失败，调用 \`bin2linyaps.fix\` skill：
 - 根据验证报告修复问题
 - 重新运行测试
 - **暂停**: 无法自动修复时询问用户
@@ -656,37 +657,37 @@ else
 fi
 ```
 
-### 调用deb-analysis
+### 调用bin2linyaps.deb.analyze
 ```bash
-python3 skills/deb-analysis/scripts/deb_to_linglong.py <deb_file> --base <base> --extract-dir <tmp_dir>
+python3 skills/bin2linyaps.deb.analyze/scripts/deb_to_linglong.py <deb_file> --base <base> --extract-dir <tmp_dir>
 ```
 
-### 调用project-structure-validator
+### 调用bin2linyaps.validate-structure
 ```bash
-bash skills/project-structure-validator/scripts/validate_project_structure.sh <project_dir> --json
+bash skills/bin2linyaps.validate-structure/scripts/validate_project_structure.sh <project_dir> --json
 
 # 使用自定义配置
-bash skills/project-structure-validator/scripts/validate_project_structure.sh <project_dir> --config custom_rules.json --json
+bash skills/bin2linyaps.validate-structure/scripts/validate_project_structure.sh <project_dir> --config custom_rules.json --json
 
 # 自动修复权限问题
-bash skills/project-structure-validator/scripts/validate_project_structure.sh <project_dir> --fix
+bash skills/bin2linyaps.validate-structure/scripts/validate_project_structure.sh <project_dir> --fix
 ```
 
 ### 调用common-data-verify
 ```bash
-python3 skills/compat-testing/scripts/common-data-verify.py <files_res_dir> --json --output report.json
+python3 skills/bin2linyaps.compat-testing/scripts/common-data-verify.py <files_res_dir> --json --output report.json
 ```
 
 ### 调用validate_linglong_yaml
 ```bash
-python3 skills/compat-testing/scripts/validate_linglong_yaml.py --input linglong.yaml --exec-name "app %U" --json
+python3 skills/bin2linyaps.compat-testing/scripts/validate_linglong_yaml.py --input linglong.yaml --exec-name "app %U" --json
 ```
 > **注意**：此腳本會檢查 `package.id`、`package.name`、`package.description` 是否為空或包含未解析的 envsubst 變量引用（如 `${package_id}`）。若報告 `fail`，說明工程初始化時未正確填充這些欄位。
 
 ### 调用compat_checker
 ```python
 import sys
-sys.path.insert(0, "skills/compat-testing/scripts")
+sys.path.insert(0, "skills/bin2linyaps.compat-testing/scripts")
 from demos.compat_checker import CompatChecker
 checker = CompatChecker(build_dir=Path("<build_dir>"), enable_compat_check=True)
 success, message = checker.check()
@@ -694,17 +695,17 @@ success, message = checker.check()
 
 ### 执行打包脚本（deb 版）
 ```bash
-bash skills/linglong-project-gen/scripts/pak_linyaps.sh --linyaps_arch=x86_64 --origin_version=<ver> --src_path=<deb>
+bash skills/bin2linyaps.deb.project-gen/scripts/pak_linyaps.sh --linyaps_arch=x86_64 --origin_version=<ver> --src_path=<deb>
 ```
 
 ### 调用 scan_executables（tar 包自动扫描 binary）
 ```bash
-bash skills/tar-linyaps/scripts/scan_executables.sh <extract_dir>
+bash skills/bin2linyaps.tar.transfer/scripts/scan_executables.sh <extract_dir>
 ```
 
 ### 执行打包脚本（tar 版）
 ```bash
-bash skills/tar-linyaps/templates/pak_linyaps.sh \
+bash skills/bin2linyaps.tar.transfer/templates/pak_linyaps.sh \
   --src_path <tar_extract_dir> \
   --package_id <package_id> \
   --binary_name <binary_name> \
@@ -712,16 +713,16 @@ bash skills/tar-linyaps/templates/pak_linyaps.sh \
   --ll_version 1.0.0
 ```
 
-### 调用 appimage-linyaps 解析脚本
+### 调用 bin2linyaps.appimage.transfer 解析脚本
 ```bash
-bash skills/appimage-linyaps/scripts/extract_appimage.sh <src_path> <extract_dir>
-bash skills/appimage-linyaps/scripts/resolve_exec_command.sh <extract_dir>
-bash skills/appimage-linyaps/scripts/parse_appimage_metadata.sh <src_path>
+bash skills/bin2linyaps.appimage.transfer/scripts/extract_appimage.sh <src_path> <extract_dir>
+bash skills/bin2linyaps.appimage.transfer/scripts/resolve_exec_command.sh <extract_dir>
+bash skills/bin2linyaps.appimage.transfer/scripts/parse_appimage_metadata.sh <src_path>
 ```
 
 ### 执行打包脚本（AppImage 版）
 ```bash
-bash skills/appimage-linyaps/templates/pak_linyaps.sh \
+bash skills/bin2linyaps.appimage.transfer/templates/pak_linyaps.sh \
   --src_path <src_path> \
   --package_id <package_id> \
   --app_name "My Application" \
