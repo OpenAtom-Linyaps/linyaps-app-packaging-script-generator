@@ -111,7 +111,7 @@ if [ -n "${desktop_file}" ]; then
     if [ -n "${icon_line}" ]; then
         icon_name="${icon_line#Icon=}"
         # 移除路徑前綴和擴展名，只保留圖標名稱
-        icon_name=$(echo "${icon_name}" | sed -E 's#.*/([^.]*)\..*$#\1#')
+        icon_name=$(echo "${icon_name}" | sed -E 's#(.*/)?(.*)\.[^./]+$#\2#')
     fi
 fi
 

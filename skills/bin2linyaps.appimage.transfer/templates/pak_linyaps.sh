@@ -13,7 +13,7 @@
 #=============================================================================
 
 srcType="appimage"
-templateVer="2026.7.28.2"
+templateVer="2026.7.30.4"
 
 set -x
 
@@ -523,11 +523,19 @@ build_pak() {
 		wrapper_target="${resolved_exec}"
 	fi
 
+	# 檢查 wrapper target 是否具有可執行權限
+	# 若文件存在但無執行權限，則報錯終止構建，避免生成無效 wrapper
+	local target_path="${binary_dir}/lib/${app_prefix}/${wrapper_target}"
+	if [ -f "${target_path}" ] && [ ! -x "${target_path}" ]; then
+		echo "[Warning] Binary '${wrapper_target}' found but is not executable: ${target_path}" >&2
+		echo "[Warning] Desktop Exec entry points to a non-executable file. Please add execute permission or verify the path." >&2
+	fi
+
 	# 檢測 wrapper_target 是否為有風險的腳本（使用 $1/$2 等位置參數）
 	# 若是，則在後續 desktop Exec 更新中過濾掉非 freedesktop 佔位符參數
 	# 防止 dde-application-manager 注入 --no-sandbox 等參數導致 AppRun 崩潰
 	local has_risk=false
-	local target_path="${binary_dir}/lib/${app_prefix}/${wrapper_target}"
+	target_path="${binary_dir}/lib/${app_prefix}/${wrapper_target}"
 	local analyzer_script="${project_root}/scripts/analyze_entry_script.sh"
 	if [ -f "${target_path}" ] && [ -f "${analyzer_script}" ]; then
 		local analyze_result

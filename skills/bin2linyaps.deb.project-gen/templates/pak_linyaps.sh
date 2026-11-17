@@ -3,7 +3,7 @@
 set -x
 
 srcType="deb"
-templateVer="2026.7.28.2"
+templateVer="2026.7.30.4"
 
 # 默認 base/runtime 配置（可通過命令行參數覆蓋）
 DEFAULT_BASE_ID="org.deepin.base"
@@ -610,6 +610,60 @@ build_pak() {
 	# 注意：此操作必须在所有软链动作之前完成，否则软链关系将被破坏
 	"${project_root}/scripts/handle_special_paths.sh" "${binary_tmp_dir}" "${binary_dir}"
 
+	# === Linyaps App ID Detection ===
+	# 检测 handle_special_paths.sh 是否发现了 linyaps 格式的 /opt/apps/<id>/ 结构
+	if [ -f "${binary_dir}/.detected_app_id" ]; then
+		detected_package_id=$(cat "${binary_dir}/.detected_app_id")
+
+		echo "========================================="
+		echo "检测到 linyaps 应用 ID: ${detected_package_id}"
+		echo "当前 package_id: ${package_id}"
+		echo "========================================="
+
+		if [ "${package_id}" != "${detected_package_id}" ]; then
+			echo "ID 不一致，执行对齐操作..."
+
+			# 1. 更新 linglong.yaml 的 id 字段
+			if [ -f "${build_tmp_dir}/linglong.yaml" ]; then
+				sed -i "s/^\s*id:\s*.*$/  id: ${detected_package_id}/" "${build_tmp_dir}/linglong.yaml"
+				echo "已更新 linglong.yaml id: ${detected_package_id}"
+			fi
+
+			# 2. 更新 binary/ 下 desktop 文件中的路径引用
+			while IFS= read -r desktop_file; do
+				if grep -q "/opt/apps/${package_id}/" "${desktop_file}" 2>/dev/null; then
+					sed -i "s|/opt/apps/${package_id}/|/opt/apps/${detected_package_id}/|g" "${desktop_file}"
+					echo "已更新 desktop 路径: $(basename "${desktop_file}")"
+				fi
+			done < <(find "${binary_dir}" -name "*.desktop" -type f 2>/dev/null)
+
+			# 3. 更新 files_res/ 下 desktop 文件中的路径引用
+			local files_res_dir="${build_tmp_dir}/files_res"
+			if [ -d "${files_res_dir}" ]; then
+				while IFS= read -r desktop_file; do
+					if grep -q "/opt/apps/${package_id}/" "${desktop_file}" 2>/dev/null; then
+						sed -i "s|/opt/apps/${package_id}/|/opt/apps/${detected_package_id}/|g" "${desktop_file}"
+						echo "已更新 files_res desktop 路径: $(basename "${desktop_file}")"
+					fi
+				done < <(find "${files_res_dir}" -name "*.desktop" -type f 2>/dev/null)
+			fi
+
+			# 4. 提示用户重命名工程目录
+			echo ""
+			echo "⚠ 检测到的 app_id (${detected_package_id}) 与当前 package_id (${package_id}) 不一致！"
+			echo "   工程目录名仍需修复为 CI_ll_${detected_package_id}"
+			echo "   请构建完成后执行以下命令："
+			echo "   fix_package_id.sh \"${project_root}\" --new-id \"${detected_package_id}\" --rename-dir"
+			echo ""
+		else
+			echo "ID 一致，无需对齐"
+		fi
+
+		# 清理标记文件
+		rm -f "${binary_dir}/.detected_app_id"
+	fi
+	# === End ID Detection ===
+
 	# 创建 bin/ 目录用于存放可执行文件软链
 	# 注意：此操作必须在特殊路径处理完成之后进行
 	mkdir -p "${binary_dir}/bin"
@@ -635,13 +689,50 @@ build_pak() {
 		actual_binary=""
 		real_binary=""
 		rel_binary=""
+
+		# 先按可执行权限查找
+		local candidates
+		candidates=$(find "${binary_dir}" -type f -name "${binary_name}" -executable 2>/dev/null | sort)
+		if [ -z "${candidates}" ]; then
+			# Fallback: 仅按名称查找（包括符号链接，支持损坏软链的冗余机制）
+			candidates=$(find "${binary_dir}" \( -type f -o -type l \) -name "${binary_name}" 2>/dev/null | sort)
+			if [ -n "${candidates}" ]; then
+				echo "[Warning] Binary '${binary_name}' found but is not executable:" >&2
+				echo "[Warning]   $(echo "${candidates}" | tr '\n' ' ')" >&2
+				echo "[Warning] Desktop Exec entry points to a non-executable file. Please add execute permission or verify the path." >&2
+			fi
+		fi
+		if [ -z "${candidates}" ]; then
+			# 兜底: 模糊名称搜索，应对 binary_name 与解压路径文件名不完全一致
+			candidates=$(find "${binary_dir}" -type f -name "*${binary_name}*" 2>/dev/null | sort)
+			if [ -n "${candidates}" ]; then
+				echo "[Warning] Binary '${binary_name}' not found by exact name, using fuzzy match:" >&2
+				echo "[Warning]   $(echo "${candidates}" | tr '\n' ' ')" >&2
+			fi
+		fi
+
 		while IFS= read -r candidate; do
 			# 解析真實路徑，跳過損壞的符號連結
 			local resolved
-			resolved=$(readlink -f "${candidate}" 2>/dev/null) || {
-				echo "  跳過損壞軟鏈: ${candidate}" >&2
-				continue
-			}
+			resolved=$(readlink -f "${candidate}" 2>/dev/null)
+			if [ -z "${resolved}" ]; then
+				if [ -L "${candidate}" ]; then
+					# 損壞的符號連結: 從軟鏈目標中提取文件名，在 binary_dir 中查找真實文件
+					local link_target
+					link_target=$(readlink "${candidate}")
+					local target_basename
+					target_basename=$(basename "${link_target}")
+					resolved=$(find "${binary_dir}" -type f -name "${target_basename}" 2>/dev/null | head -n 1)
+					if [ -z "${resolved}" ]; then
+						echo "  跳過損壞軟鏈: ${candidate}" >&2
+						continue
+					fi
+					echo "  通過軟鏈目標找到 binary: ${candidate} -> ${resolved}" >&2
+				else
+					echo "  跳過無法解析的路徑: ${candidate}" >&2
+					continue
+				fi
+			fi
 			# 檢查 ELF 架構兼容性
 			if check_elf_compatibility "${resolved}"; then
 				actual_binary="${candidate}"
@@ -649,7 +740,7 @@ build_pak() {
 				echo "  選中有效的 binary: ${candidate} -> ${resolved}" >&2
 				break
 			fi
-		done < <(find "${binary_dir}" -type f -name "${binary_name}" -executable 2>/dev/null | sort)
+		done < <(echo "${candidates}")
 
 		if [ -n "${actual_binary}" ] && [ -n "${real_binary}" ]; then
 			# 計算相對於 binary/ 的路徑
