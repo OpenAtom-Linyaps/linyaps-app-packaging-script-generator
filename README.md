@@ -12,13 +12,13 @@
 ┌─────────────────────────────────────────────────────────────┐
 │  deb-linglong-packer (Agent)                                 │
 │  ┌───────────────────────────────────────────────────────┐  │
-│  │  deb-analysis   → 解析 deb 元数据，解压并提取结构      │  │
-│  │  linglong-project-gen → 生成 linglong.yaml + 打包脚本 │  │
-│  │  resource-collector  → 收集 desktop/icon/appdata 资源 │  │
-│  │  compat-testing → 构建测试 + 兼容性检测               │  │
-│  │  linglong-fix   → 按验证报告自动修复构建问题          │  │
-│  │  tar-linyaps    → tar 包转换                          │  │
-│  │  appimage-linyaps → AppImage 转换                     │  │
+│  │  bin2linyaps.deb.analyze   → 解析 deb 元数据，解压并提取结构      │  │
+│  │  bin2linyaps.deb.project-gen → 生成 linglong.yaml + 打包脚本 │  │
+│  │  bin2linyaps.deb.collect-resources  → 收集 desktop/icon/appdata 资源 │  │
+│  │  bin2linyaps.compat-testing → 构建测试 + 兼容性检测               │  │
+│  │  bin2linyaps.fix   → 按验证报告自动修复构建问题          │  │
+│  │  bin2linyaps.tar.transfer    → tar 包转换                          │  │
+│  │  bin2linyaps.appimage.transfer → AppImage 转换                     │  │
 │  └───────────────────────────────────────────────────────┘  │
 └─────────────────────────────────────────────────────────────┘
 ```
@@ -27,21 +27,21 @@
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│ 1. Deb 分析 (deb-analysis)                                   │
+│ 1. Deb 分析 (bin2linyaps.deb.analyze)                                   │
 │    - 解析 deb 元数据                                         │
 │    - 解压 deb 文件                                           │
 │    - 提取文件结构                                            │
 └─────────────────────────────────────────────────────────────┘
                               ▼
 ┌─────────────────────────────────────────────────────────────┐
-│ 2. 工程生成 (linglong-project-gen)                           │
+│ 2. 工程生成 (bin2linyaps.deb.project-gen)                           │
 │    - 创建 CI_ll_<package_id> 目录                            │
 │    - 生成 linglong.yaml                                      │
 │    - 生成 pak_linyaps.sh                                     │
 └─────────────────────────────────────────────────────────────┘
                               ▼
 ┌─────────────────────────────────────────────────────────────┐
-│ 3. 资源收集 (resource-collector)                             │
+│ 3. 资源收集 (bin2linyaps.deb.collect-resources)                             │
 │    - 提取 desktop、icons、appdata                            │
 │    - 整理到 files_res/                                       │
 │    - 验证资源合规性                                          │
@@ -49,7 +49,7 @@
 └─────────────────────────────────────────────────────────────┘
                               ▼
 ┌─────────────────────────────────────────────────────────────┐
-│ 4. 兼容性测试 (compat-testing)                               │
+│ 4. 兼容性测试 (bin2linyaps.compat-testing)                               │
 │    - 验证 linglong.yaml 格式                                 │
 │    - 验证资源目录结构                                         │
 │    - 执行打包测试                                             │
@@ -59,7 +59,7 @@
                     │                           │
               测试通过 ▼                    测试失败 ▼
 ┌───────────────────────────┐  ┌───────────────────────────┐
-│ 5. 完成                    │  │ 5. 问题修复 (linglong-fix) │
+│ 5. 完成                    │  │ 5. 问题修复 (bin2linyaps.fix) │
 │    - 保存工程              │  │    - 修复 YAML 格式        │
 │    - 清理临时文件          │  │    - 修复 desktop 文件     │
 │    - 更新任务状态          │  │    - 修复图标目录          │
@@ -71,13 +71,13 @@
 
 | Skill | 功能 | 调用方式 |
 |------|------|----------|
-| `deb-analysis` | 解析 Debian 软件包（.deb），提取元数据并解压文件内容 | `/deb-analysis /path/to/package.deb` |
-| `linglong-project-gen` | 根据 deb 包信息和 CSV 配置，生成完整玲珑打包工程（`linglong.yaml` + `pak_linyaps.sh`） | `/linglong-project-gen com.example.app` |
-| `resource-collector` | 从解压目录提取 desktop、图标、appdata 等资源，按规范整理到 `files_res/` | `/resource-collector /tmp/extracted CI_ll_com.example.app` |
-| `compat-testing` | 执行打包构建测试并运行兼容性检测，确保应用能在玲珑环境正常运行 | `/compat-testing CI_ll_com.example.app` |
-| `linglong-fix` | 根据验证报告自动修复 `linglong.yaml` 格式、desktop 文件、图标目录、二进制权限等 | `/linglong-fix CI_ll_com.example.app` |
-| `tar-linyaps` | 将 Linux binary release tar 归档包转换为玲珑打包脚本 | `/tar-linyaps /path/to/package.tar.gz` |
-| `appimage-linyaps` | 将 Linux AppImage 应用转换为玲珑打包脚本 | `/appimage-linyaps /path/to/application.AppImage` |
+| `bin2linyaps.deb.analyze` | 解析 Debian 软件包（.deb），提取元数据并解压文件内容 | `/bin2linyaps.deb.analyze /path/to/package.deb` |
+| `bin2linyaps.deb.project-gen` | 根据 deb 包信息和 CSV 配置，生成完整玲珑打包工程（`linglong.yaml` + `pak_linyaps.sh`） | `/bin2linyaps.deb.project-gen com.example.app` |
+| `bin2linyaps.deb.collect-resources` | 从解压目录提取 desktop、图标、appdata 等资源，按规范整理到 `files_res/` | `/bin2linyaps.deb.collect-resources /tmp/extracted CI_ll_com.example.app` |
+| `bin2linyaps.compat-testing` | 执行打包构建测试并运行兼容性检测，确保应用能在玲珑环境正常运行 | `/bin2linyaps.compat-testing CI_ll_com.example.app` |
+| `bin2linyaps.fix` | 根据验证报告自动修复 `linglong.yaml` 格式、desktop 文件、图标目录、二进制权限等 | `/bin2linyaps.fix CI_ll_com.example.app` |
+| `bin2linyaps.tar.transfer` | 将 Linux binary release tar 归档包转换为玲珑打包脚本 | `/bin2linyaps.tar.transfer /path/to/package.tar.gz` |
+| `bin2linyaps.appimage.transfer` | 将 Linux AppImage 应用转换为玲珑打包脚本 | `/bin2linyaps.appimage.transfer /path/to/application.AppImage` |
 
 ## 目录结构
 
@@ -85,14 +85,14 @@
 ├── agents/
 │   └── deb-linglong-packer.agent.md      # 主 Agent 编排文件
 ├── skills/                                # 子 Skill 定义
-│   ├── deb-analysis/SKILL.md              # Deb 包分析
-│   ├── linglong-project-gen/SKILL.md      # 工程生成
-│   ├── resource-collector/SKILL.md        # 资源收集
-│   ├── compat-testing/SKILL.md            # 兼容性测试
-│   ├── linglong-fix/SKILL.md              # 问题修复
-│   ├── tar-linyaps/SKILL.md               # Tar 包转换
-│   ├── appimage-linyaps/SKILL.md          # AppImage 转换
-│   ├── project-structure-validator/       # 工程结构校验
+│   ├── bin2linyaps.deb.analyze/SKILL.md              # Deb 包分析
+│   ├── bin2linyaps.deb.project-gen/SKILL.md      # 工程生成
+│   ├── bin2linyaps.deb.collect-resources/SKILL.md        # 资源收集
+│   ├── bin2linyaps.compat-testing/SKILL.md            # 兼容性测试
+│   ├── bin2linyaps.fix/SKILL.md              # 问题修复
+│   ├── bin2linyaps.tar.transfer/SKILL.md               # Tar 包转换
+│   ├── bin2linyaps.appimage.transfer/SKILL.md          # AppImage 转换
+│   ├── bin2linyaps.validate-structure/       # 工程结构校验
 │   └── config/
 │       ├── base_runtime_whitelist.conf    # base/runtime 全局白名单
 │       └── arch_mapping.json              # 架构映射
@@ -218,7 +218,7 @@ com.visualstudio.code,/path/to/code_arm64.deb,aarch64,org.deepin.base/23.1.0,org
 
 ## AppImage 转换
 
-`appimage-linyaps` 技能用于将 AppImage 应用程序转换为玲珑包格式，基于 `tar-linyaps` 技能架构针对 AppImage 特性优化。
+`bin2linyaps.appimage.transfer` 技能用于将 AppImage 应用程序转换为玲珑包格式，基于 `bin2linyaps.tar.transfer` 技能架构针对 AppImage 特性优化。
 
 ### 功能特性
 
@@ -251,19 +251,19 @@ com.visualstudio.code,/path/to/code_arm64.deb,aarch64,org.deepin.base/23.1.0,org
 
 ### 详细文档
 
-- [使用指南](docs/appimage-linyaps.README.md)
-- [设计文档](appimage-linyaps.design.md)
-- [实现方案](skills/appimage-linyaps/IMPLEMENTATION.md)
-- [Skill 说明](skills/appimage-linyaps/README.md)
+- [使用指南](docs/bin2linyaps.appimage.transfer.README.md)
+- [设计文档](bin2linyaps.appimage.transfer.design.md)
+- [实现方案](skills/bin2linyaps.appimage.transfer/IMPLEMENTATION.md)
+- [Skill 说明](skills/bin2linyaps.appimage.transfer/README.md)
 
 ## 命令行工具
 
 | 工具 | 用途 | 典型用法 |
 |------|------|----------|
-| `skills/deb-analysis/scripts/deb_to_linglong.py` | 解析 deb 包 | `python3 deb_to_linglong.py package.deb --base org.deepin.base/23.1.0` |
-| `skills/compat-testing/scripts/common-data-verify.py` | 验证目录结构 | `python3 common-data-verify.py ./files_res --json --output report.json` |
-| `skills/compat-testing/scripts/validate_linglong_yaml.py` | 验证 YAML 格式 | `python3 validate_linglong_yaml.py --input linglong.yaml --exec-name "app %U"` |
-| `skills/compat-testing/scripts/demos/compat_checker.py` | 兼容性检测 | `from demos.compat_checker import CompatChecker` |
+| `skills/bin2linyaps.deb.analyze/scripts/deb_to_linglong.py` | 解析 deb 包 | `python3 deb_to_linglong.py package.deb --base org.deepin.base/23.1.0` |
+| `skills/bin2linyaps.compat-testing/scripts/common-data-verify.py` | 验证目录结构 | `python3 common-data-verify.py ./files_res --json --output report.json` |
+| `skills/bin2linyaps.compat-testing/scripts/validate_linglong_yaml.py` | 验证 YAML 格式 | `python3 validate_linglong_yaml.py --input linglong.yaml --exec-name "app %U"` |
+| `skills/bin2linyaps.compat-testing/scripts/demos/compat_checker.py` | 兼容性检测 | `from demos.compat_checker import CompatChecker` |
 
 ## 打包脚本使用
 
@@ -320,7 +320,7 @@ CI_ll_com.example.app/
 | 级别 | 路径 | 说明 |
 |-----|------|------|
 | 全局（推荐） | `skills/config/base_runtime_whitelist.conf` | 所有 skill 和工程共享的权威来源 |
-| Skill 级别 | `skills/linglong-project-gen/config/base_runtime_whitelist.conf` | 本地副本，生成工程时同步 |
+| Skill 级别 | `skills/bin2linyaps.deb.project-gen/config/base_runtime_whitelist.conf` | 本地副本，生成工程时同步 |
 | 工程级别 | `CI_ll_<package_id>/config/base_runtime_whitelist.conf` | 工程私有配置 |
 
 ### 查找优先级
@@ -344,17 +344,17 @@ org.deepin.base/25.2.2	-	纯 base 应用（无 runtime）
 
 ```bash
 # 验证工程的 base/runtime 配置
-./skills/linglong-project-gen/scripts/validate_base_runtime.sh CI_ll_com.example.app
+./skills/bin2linyaps.deb.project-gen/scripts/validate_base_runtime.sh CI_ll_com.example.app
 
 # 自动修复模式
-./skills/linglong-project-gen/scripts/validate_base_runtime.sh CI_ll_com.example.app --fix
+./skills/bin2linyaps.deb.project-gen/scripts/validate_base_runtime.sh CI_ll_com.example.app --fix
 ```
 
 ## 常见问题
 
 | 问题 | 解决 |
 |------|------|
-| desktop 文件 Icon 路径错误？ | 使用 `linglong-fix` skill 自动修复，或手动修改：`Icon=/usr/share/icons/app.png  →  Icon=app` |
+| desktop 文件 Icon 路径错误？ | 使用 `bin2linyaps.fix` skill 自动修复，或手动修改：`Icon=/usr/share/icons/app.png  →  Icon=app` |
 | 构建失败提示缺少依赖？ | 在 `linglong.yaml` 的 `buildext.apt.depends` 中添加缺失依赖 |
 | 兼容性检测超时？ | 超时（exit code 124）视为成功，表示应用正常启动并持续运行 |
 | 多架构如何处理？ | 在 CSV 中为同一包名指定多行，每行一个架构 |
@@ -372,7 +372,7 @@ org.deepin.base/25.2.2	-	纯 base 应用（无 runtime）
 ## 相关文档
 
 - [deb-linglong-packer 工具说明](docs/deb-linglong-packer.README.md)
-- [appimage-linyaps 使用指南](docs/appimage-linyaps.README.md)
+- [bin2linyaps.appimage.transfer 使用指南](docs/bin2linyaps.appimage.transfer.README.md)
 - [白名单配置文件](skills/config/base_runtime_whitelist.conf)
-- [Base/Runtime 验证脚本](skills/linglong-project-gen/scripts/validate_base_runtime.sh)
+- [Base/Runtime 验证脚本](skills/bin2linyaps.deb.project-gen/scripts/validate_base_runtime.sh)
 - [新人必看](NewToHere.md)

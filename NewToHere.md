@@ -12,14 +12,14 @@ linglong-bin=1.13.7-ziggy2 linglong-builder=1.13.7-ziggy2
  - `https://linux.apps.demo.com/download/demo.deb`是一个Linux应用，帮我转换为玲珑应用
 
 ## skills能力介绍
- - `appimage-linyaps`: 用于将 AppImage 应用程序转换为玲珑（Linyaps）包格式。该技能基于 `tar-linyaps` 技能架构，专门针对 AppImage 的特性进行优化。
- - `tar-linyaps`: 將 Linux binary release tar 归档包转换成玲珑（Linyaps）應用便捷打包腳本。
- - `compat-testing`: 执行玲珑打包构建测试，验证生成的工程是否可以正常构建，并运行兼容性检测确保应用能在玲珑环境中正常运行。
- - `deb-analysis`: 解析Debian软件包(.deb)文件，提取元数据信息并解压文件内容，为后续玲珑打包工程生成提供基础数据。
- - `linglong-fix`: 根据验证报告自动修复玲珑构建项目中的问题，包括linglong.yaml格式、desktop文件、图标目录结构、二进制文件权限等。
- - `linglong-project-gen`: 根据deb包信息和CSV配置，生成完整的玲珑打包工程，包括 `linglong.yaml` 配置文件和 `pak_linyaps.sh` 打包脚本。
- - `project-structure-validator`: 验证玲珑打包项目目录结构和必要文件的完整性，确保项目符合打包要求。
- - `resource-collector`: 从deb包解压后的目录中提取应用资源文件（desktop文件、图标、appdata、补全脚本等），按照玲珑打包规范整理到 `files_res/` 目录结构中。
+ - `bin2linyaps.appimage.transfer`: 用于将 AppImage 应用程序转换为玲珑（Linyaps）包格式。该技能基于 `bin2linyaps.tar.transfer` 技能架构，专门针对 AppImage 的特性进行优化。
+ - `bin2linyaps.tar.transfer`: 將 Linux binary release tar 归档包转换成玲珑（Linyaps）應用便捷打包腳本。
+ - `bin2linyaps.compat-testing`: 执行玲珑打包构建测试，验证生成的工程是否可以正常构建，并运行兼容性检测确保应用能在玲珑环境中正常运行。
+ - `bin2linyaps.deb.analyze`: 解析Debian软件包(.deb)文件，提取元数据信息并解压文件内容，为后续玲珑打包工程生成提供基础数据。
+ - `bin2linyaps.fix`: 根据验证报告自动修复玲珑构建项目中的问题，包括linglong.yaml格式、desktop文件、图标目录结构、二进制文件权限等。
+ - `bin2linyaps.deb.project-gen`: 根据deb包信息和CSV配置，生成完整的玲珑打包工程，包括 `linglong.yaml` 配置文件和 `pak_linyaps.sh` 打包脚本。
+ - `bin2linyaps.validate-structure`: 验证玲珑打包项目目录结构和必要文件的完整性，确保项目符合打包要求。
+ - `bin2linyaps.deb.collect-resources`: 从deb包解压后的目录中提取应用资源文件（desktop文件、图标、appdata、补全脚本等），按照玲珑打包规范整理到 `files_res/` 目录结构中。
 
 
 
@@ -43,7 +43,8 @@ CI_ll_app.netlify.ytdn
 ├── scripts
 │   ├── dedup_desktop_files.sh
 │   ├── handle_special_paths.sh
-│   └── validate_bin_nesting.sh
+│   ├── validate_bin_nesting.sh
+│   └── fix_nonstd_lib_symlinks.sh
 └── templates
     ├── files_res
     │   └── share
