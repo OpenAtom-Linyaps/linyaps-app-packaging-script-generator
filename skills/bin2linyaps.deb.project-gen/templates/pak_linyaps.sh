@@ -3,7 +3,7 @@
 set -x
 
 srcType="deb"
-templateVer="2026.7.30.4"
+templateVer="2026.8.4.1"
 
 # 默認 base/runtime 配置（可通過命令行參數覆蓋）
 DEFAULT_BASE_ID="org.deepin.base"
@@ -684,6 +684,10 @@ build_pak() {
 	fi
 
 	if [ -n "${binary_name}" ]; then
+		# 记录原始 binary_name（来自 CSV 配置），用于后续优先级判定
+		# 若 desktop 文件兜底重赋值 binary_name，此变量将变为 false
+		local binary_name_is_original=true
+
 		# 在 binary/ 目录下查找二进制文件（可能有多個匹配，如 bin/ 和 opt/ 下）
 		# 逐個檢查：跳過損壞軟鏈、架構不匹配的 ELF，直到找到有效的 binary
 		actual_binary=""
@@ -708,6 +712,25 @@ build_pak() {
 			if [ -n "${candidates}" ]; then
 				echo "[Warning] Binary '${binary_name}' not found by exact name, using fuzzy match:" >&2
 				echo "[Warning]   $(echo "${candidates}" | tr '\n' ' ')" >&2
+			fi
+		fi
+
+		# 兜底: binary_name 精确+模糊查找均未找到，尝试从 desktop 文件提取 exec_bin_name
+		# 适用于 CSV 配置的 binary_name 不在解压目录中的场景
+		if [ -z "${candidates}" ]; then
+			local detected_name
+			detected_name=$(extract_binary_name_from_desktop "${binary_dir}" 2>/dev/null)
+			if [ -n "${detected_name}" ] && [ "${detected_name}" != "${binary_name}" ]; then
+				echo "[Info] binary_name '${binary_name}' not found in binary_dir, trying detected '${detected_name}' from desktop files"
+				binary_name="${detected_name}"
+				binary_name_is_original=false
+				candidates=$(find "${binary_dir}" -type f -name "${binary_name}" -executable 2>/dev/null | sort)
+				if [ -z "${candidates}" ]; then
+					candidates=$(find "${binary_dir}" \( -type f -o -type l \) -name "${binary_name}" 2>/dev/null | sort)
+				fi
+				if [ -z "${candidates}" ]; then
+					candidates=$(find "${binary_dir}" -type f -name "*${binary_name}*" 2>/dev/null | sort)
+				fi
 			fi
 		fi
 
@@ -795,17 +818,43 @@ WRAPPER_EOF
 			# 将 Exec= 中的二进制路径替换为 wrapper 路径
 			# 处理 files_res/ 和 binary/ 中的所有 desktop 文件
 			# 同时检测风险脚本，过滤非 freedesktop 占位符参数
+			#
+			# 优先级匹配规则：
+			#   优先级1: Exec 行包含 binary_name → wrapper_name = binary_name
+			#   优先级2: binary_name 来自 CSV 原始配置且存在于 binary_dir，
+			#            exec_bin_name 也在 binary_dir 中 → 强制使用 binary_name.wrapper
+			#   未匹配: 不替换
+			local desktop_updated=0
 			for desktop_file in $(find "${build_tmp_dir}" -name "*.desktop" -type f 2>/dev/null); do
-				if grep -q "Exec=.*${binary_name}" "${desktop_file}"; then
-					local tmp_file="${desktop_file}.tmp"
-					> "${tmp_file}"
-					while IFS= read -r line; do
+				local tmp_file="${desktop_file}.tmp"
+				> "${tmp_file}"
+				local file_updated=false
+				while IFS= read -r line; do
+					if [[ "${line}" == Exec=* ]]; then
+						exec_value="${line#Exec=}"
+						# 移除 env VAR=val 前缀
+						exec_value=$(echo "${exec_value}" | sed 's/^env \(\S*=\S*\s\)*//')
+						exec_bin_path=$(echo "${exec_value}" | awk '{print $1}')
+						exec_bin_name=$(basename "${exec_bin_path}")
+						exec_args=$(echo "${exec_value}" | awk '{$1=""; print $0}' | sed 's/^ //')
+
+						local do_replace=false
+						local target_wrapper=""
+
+						# 优先级1: Exec 行包含 binary_name → 直接替换
 						if [[ "${line}" == Exec=*${binary_name}* ]]; then
-							exec_value="${line#Exec=}"
-							# 移除 env VAR=val 前缀
-							exec_value=$(echo "${exec_value}" | sed 's/^env \(\S*=\S*\s\)*//')
-							exec_bin=$(echo "${exec_value}" | awk '{print $1}')
-							exec_args=$(echo "${exec_value}" | awk '{$1=""; print $0}' | sed 's/^ //')
+							do_replace=true
+							target_wrapper="${binary_name}"
+						# 优先级2: binary_name 来自 CSV 原始配置且存在于 binary_dir，
+						#           exec_bin_name 也在 binary_dir 中 → 强制使用 binary_name.wrapper
+						elif [ "${binary_name_is_original}" = true ] && \
+						     find "${binary_dir}" -type f -name "${exec_bin_name}" 2>/dev/null | grep -q .; then
+							echo "  [Info] Desktop Exec '${exec_bin_name}' replaced with configured '${binary_name}.wrapper'"
+							do_replace=true
+							target_wrapper="${binary_name}"
+						fi
+
+						if [ "${do_replace}" = true ]; then
 							# 若检测到有风险的脚本，过滤掉非 freedesktop 占位符参数
 							if [ "${has_risk}" = "true" ] && [ -n "${exec_args}" ]; then
 								local filtered_args=""
@@ -821,19 +870,30 @@ WRAPPER_EOF
 								done
 								exec_args="${filtered_args# }"
 							fi
-							new_exec="Exec=${binary_name}.wrapper"
+							new_exec="Exec=${target_wrapper}.wrapper"
 							if [ -n "${exec_args}" ]; then
 								new_exec="${new_exec} ${exec_args}"
 							fi
 							echo "${new_exec}" >> "${tmp_file}"
+							file_updated=true
 						else
 							echo "${line}" >> "${tmp_file}"
 						fi
-					done < "${desktop_file}"
+					else
+						echo "${line}" >> "${tmp_file}"
+					fi
+				done < "${desktop_file}"
+				if [ "${file_updated}" = true ]; then
 					mv "${tmp_file}" "${desktop_file}"
 					echo "Updated Exec= in: ${desktop_file}"
+					desktop_updated=$((desktop_updated + 1))
+				else
+					rm -f "${tmp_file}"
 				fi
 			done
+			if [ "${desktop_updated}" -eq 0 ]; then
+				echo "[Warning] No desktop files were updated with wrapper Exec. Verify binary_name and desktop file Exec entries."
+			fi
 		else
 			echo "Warning: Binary '${binary_name}' not found in ${binary_dir}"
 		fi
