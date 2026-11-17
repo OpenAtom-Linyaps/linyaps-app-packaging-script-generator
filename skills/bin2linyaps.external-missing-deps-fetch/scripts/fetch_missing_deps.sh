@@ -201,35 +201,8 @@ if [ "$URL_COUNT" -gt 0 ]; then
     log_info "生成: $CONF_FILE"
 fi
 
-DOWNLOAD_SCRIPT="${PROJECT_DIR}/download_missing_deps.sh"
-log_info "生成 download_missing_deps.sh..."
-cat > "$DOWNLOAD_SCRIPT" << 'DLSH_EOF'
-#!/bin/bash
-set -euo pipefail
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-BINARY_DIR="${1:-${SCRIPT_DIR}/binary_dir}"
-if [ ! -f "${SCRIPT_DIR}/missing_deps_urls.conf" ]; then
-  echo "ERROR: missing_deps_urls.conf not found in ${SCRIPT_DIR}"
-  exit 1
-fi
-source "${SCRIPT_DIR}/missing_deps_urls.conf"
-if [ ${#MISSING_DEPS_URLS[@]} -eq 0 ]; then
-  echo "INFO: 没有需要下载的依赖包"; exit 0
-fi
-DEB_CACHE="/tmp/lingyaps-debs"
-mkdir -p "$BINARY_DIR" "$DEB_CACHE"
-for url in "${MISSING_DEPS_URLS[@]}"; do
-  deb_file="$DEB_CACHE/$(basename "$url")"
-  echo "下载: $url"
-  wget -q "$url" -O "$deb_file"
-  echo "解压: $deb_file -> $BINARY_DIR"
-  dpkg -x "$deb_file" "$BINARY_DIR"
-  rm -f "$deb_file"
-done
-echo "完成: 已下载并解压 ${#MISSING_DEPS_URLS[@]} 个依赖包到 $BINARY_DIR"
-DLSH_EOF
-chmod +x "$DOWNLOAD_SCRIPT"
-log_info "生成: $DOWNLOAD_SCRIPT"
+# download_missing_deps.sh 已改为静态脚本，不再由 fetch_missing_deps.sh 生成
+# 静态版本位于 scripts/download_missing_deps.sh，由项目初始化时 cp 到项目 scripts/ 目录
 
 # ==== 输出摘要 ====
 echo ""
@@ -246,7 +219,6 @@ echo ""
 echo "生成/更新文件（均在项目目录内）:"
 echo "  更新: $YAML_FILE              <- 保留 envsubst 变量的源模板"
 [ -f "$CONF_FILE" ] && echo "  生成: $CONF_FILE"
-echo "  生成: $DOWNLOAD_SCRIPT"
-echo ""
+echo "注意: 下载解压脚本由静态 scripts/download_missing_deps.sh 提供（项目初始化时已复制）"
 echo "注意: 只修改了 templates/linglong.yaml（源模板），未修改 build_tmp_dir 中的任何文件"
 echo "========================================"

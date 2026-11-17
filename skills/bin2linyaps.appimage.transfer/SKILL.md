@@ -290,6 +290,7 @@ cp "${skill_root}/scripts/parse_build_config.sh" "${project_dir}/scripts/"
 cp "${skill_root}/scripts/analyze_entry_script.sh" "${project_dir}/scripts/"
 cp "${skill_root}/scripts/dedup_desktop_files.sh" "${project_dir}/scripts/"
 cp "${skill_root}/scripts/validate_bin_nesting.sh" "${project_dir}/scripts/"
+cp "${skill_root}/scripts/download_missing_deps.sh" "${project_dir}/scripts/"
 chmod +x "${project_dir}/scripts/"*.sh
 
 # 拷貝白名單配置
