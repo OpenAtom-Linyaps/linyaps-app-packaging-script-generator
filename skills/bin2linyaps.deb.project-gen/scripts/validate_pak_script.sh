@@ -23,6 +23,7 @@ DEFAULT_BASE_ID="org.deepin.base"
 DEFAULT_BASE_VERSION="25.2.2"
 DEFAULT_RUNTIME_ID="org.deepin.runtime.dtk"
 DEFAULT_RUNTIME_VERSION="25.2.2"
+DEFAULT_PACKAGE_ID="com.example.app"
 
 # 狀態
 FIX_MODE=false
@@ -67,6 +68,7 @@ usage() {
   3. 值是否為空
   4. ID 格式是否符合反向域名規範
   5. Version 格式是否為 X.Y.Z 或 X.Y.Z.W
+  6. ll_id 是否已指定且有效（非空、非變量自引用、反向域名格式）
 
 返回碼:
   0 - 全部通過
@@ -139,7 +141,7 @@ check_variable_reference() {
 		if [ "${FIX_MODE}" = true ]; then
 			# 在 ll_id 行之後插入定義
 			local insert_line
-			insert_line=$(grep -n "^ll_id=" "${SCRIPT_FILE}" | tail -1 | cut -d: -f1)
+			insert_line=$(grep -nE "^[[:space:]]*ll_id=" "${SCRIPT_FILE}" | tail -1 | cut -d: -f1)
 			if [ -n "${insert_line}" ]; then
 				sed -i "${insert_line}a\\${var_name}=\"${expected_default}\"" "${SCRIPT_FILE}"
 				print_fix "已在第 $((insert_line + 1)) 行添加 ${var_name}=\"${expected_default}\""
@@ -280,7 +282,7 @@ check_default_variables() {
 			if [ "${FIX_MODE}" = true ]; then
 				# 在 ll_id 行之後插入默認值定義
 				local insert_line
-				insert_line=$(grep -n "^ll_id=" "${SCRIPT_FILE}" | tail -1 | cut -d: -f1)
+				insert_line=$(grep -nE "^[[:space:]]*ll_id=" "${SCRIPT_FILE}" | tail -1 | cut -d: -f1)
 				if [ -n "${insert_line}" ]; then
 					sed -i "${insert_line}a\\${var_name}=\"${expected_val}\"" "${SCRIPT_FILE}"
 					print_fix "已添加 ${var_name}=\"${expected_val}\""
@@ -455,6 +457,67 @@ check_whitelist() {
 	fi
 }
 
+# 检查 ll_id 的指定有效性
+# 新版本 pak_linyaps 通过 ll_id 变量 envsubst 生成 linglong.yaml 的 package.id
+# 要求：非空、非变量自引用、反向域名格式
+check_ll_id() {
+	echo ""
+	echo "--- 检查 ll_id 指定有效性 ---"
+
+	local line_content
+	line_content=$(grep -nE "^[[:space:]]*ll_id=" "${SCRIPT_FILE}" 2>/dev/null | head -1 || true)
+
+	if [ -z "${line_content}" ]; then
+		print_error "ll_id 未在腳本中定義"
+		HAS_ERRORS=1
+
+		if [ "${FIX_MODE}" = true ]; then
+			local insert_line
+			insert_line=$(grep -nE "^[[:space:]]*package_id=" "${SCRIPT_FILE}" | tail -1 | cut -d: -f1)
+			if [ -n "${insert_line}" ]; then
+				sed -i "${insert_line}a\\ll_id=\"\"" "${SCRIPT_FILE}"
+				print_fix "已在第 $((insert_line + 1)) 行添加 ll_id=\"\"（请填充实际包名）"
+				HAS_FIXES=1
+			fi
+		fi
+		return 1
+	fi
+
+	local line_num
+	line_num=$(echo "${line_content}" | cut -d: -f1)
+	local line_val
+	line_val=$(echo "${line_content}" | cut -d= -f2- | sed 's/^"//;s/"$//')
+
+	# 检查是否为空或变量自引用（如 ll_id="" 或 ll_id="${ll_id}"）
+	if [ -z "${line_val}" ] || [[ "${line_val}" =~ ^\$\{?ll_id\}?$ ]]; then
+		print_error "第 ${line_num} 行: ll_id='${line_val}' 为空或为变量自引用，构建时会因 ll_id 为空而失败！"
+		echo "  正確寫法: ll_id=\"com.example.app\"（或確保调用时传入 --package_id/--ll_id）" >&2
+		HAS_ERRORS=1
+
+		if [ "${FIX_MODE}" = true ]; then
+			sed -i "${line_num}c\\ll_id=\"${DEFAULT_PACKAGE_ID}\"" "${SCRIPT_FILE}"
+			print_fix "已將第 ${line_num} 行修復為 ll_id=\"${DEFAULT_PACKAGE_ID}\""
+			HAS_FIXES=1
+		fi
+		return 1
+	fi
+
+	# 检查是否为其他变量引用（非自引用，但也非实际值）
+	if [[ "${line_val}" =~ ^\$\{?[a-zA-Z_][a-zA-Z0-9_]*\}?$ ]]; then
+		print_warning "第 ${line_num} 行: ll_id='${line_val}' 是变量引用，请确认引用的变量已正确定义"
+		return 0
+	fi
+
+	# ID 格式验证：反向域名格式
+	if [[ ! "${line_val}" =~ ^[a-z][a-z0-9]*(\.[a-z][a-z0-9]*)+$ ]]; then
+		print_warning "第 ${line_num} 行: ll_id='${line_val}' 格式可能不正确（期望反向域名格式如 com.example.app）"
+	else
+		print_success "ll_id='${line_val}' (格式正確)"
+	fi
+
+	return 0
+}
+
 # 執行所有檢查
 echo "--- 檢查變量定義 ---"
 check_variable_reference "base_id" "${DEFAULT_BASE_ID}"
@@ -465,6 +528,7 @@ check_variable_reference "runtime_version" "${DEFAULT_RUNTIME_VERSION}"
 check_case_self_reference
 check_default_variables
 check_cli_params
+check_ll_id
 check_validate_function
 check_whitelist
 

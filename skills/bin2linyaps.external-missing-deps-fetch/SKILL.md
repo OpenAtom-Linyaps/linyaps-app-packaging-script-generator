@@ -25,7 +25,6 @@ user-invocable: false
 
 - 玲珑 `ll-builder build` 构建完成但运行时缺少动态库依赖
 - `missing_deps.json` 或 `missing_deps.csv` 已由 `bin2linyaps.compat-testing` 步骤 3（构建测试）生成（注意：compat-testing 为可选步骤，仅在提示词包含"兼容测试"时执行，此步骤随之跳过）
-- `missing_deps.json` 或 `missing_deps.csv` 已由 `bin2linyaps.compat-testing` 步骤 3（构建测试）生成
 - 需要将外部系统库纳入玲珑打包工程的 `depends` 和下载流程
 
 ## 目录约定

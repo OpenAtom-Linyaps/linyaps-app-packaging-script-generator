@@ -11,7 +11,7 @@
 #=============================================================================
 
 srcType="tar"
-templateVer="2026.7.30.4"
+templateVer="2026.8.14.3"
 
 set -x
 
@@ -29,33 +29,51 @@ runtime_version="${DEFAULT_RUNTIME_VERSION}"
 # 白名單配置文件路徑
 whitelist_file=""
 
+# 嵌套腳本文件名（僅填文件名，路徑自動拼接為 ${project_root}/<文件名>）
+# 空值表示關閉嵌套腳本功能，command/desktop Exec 指向原 wrapper
+nested_script=""
+
 # Options
 auto_clean="false"
 auto_push="${push}"
+## 额外构建参数，原样追加到 ll-builder build（默认含 --skip-output-check）
+build_extra_args="--skip-output-check"
 repo_name="nightly"
 repo_url="https://repo-dev.cicd.getdeepin.org"
 push_account_user=""
 push_account_passwd=""
 
+# 對字符串做雙引號內的 shell 轉義，保證即使路徑包含中文/特殊字符
+# （如 \、"、`、$）也能被 bash 安全加載
+shell_escape() {
+	local str="$1"
+	str=${str//\\/\\\\}
+	str=${str//\"/\\\"}
+	str=${str//\`/\\\`}
+	str=${str//\$/\\\$}
+	printf '%s' "${str}"
+}
+
 # Tar 專用參數
 src_path=""
-binary_name=""
 
 init_global_data() {
 	ARCH=$(uname -m)
 
 	origin_version=""
 	ll_version=""
+	ll_id=""
 	binary_arch=""
 	linyaps_arch=""
 	output_dir=""
 	build_tmp_dir=""
+	# binary_name 唯一聲明點（此處在 CLI 解析之前重置，確保 --binary_name 參數優先）
+	binary_name=""
 
 	project_root="$(dirname "$(readlink -f "$0")")"
 	default_output_dir="${project_root}/bins"
 
-	COMMANDLINE="$@"
-	for COMMAND in $COMMANDLINE; do
+	for COMMAND in "$@"; do
 		key=$(echo $COMMAND | awk -F= '{print $1}')
 		val=$(echo $COMMAND | awk -F= '{print $2}')
 
@@ -99,6 +117,9 @@ init_global_data() {
 		--package_id)
 			package_id="$val"
 			;;
+		--ll_id)
+			ll_id="$val"
+			;;
 		--app_name)
 			app_name="$val"
 			;;
@@ -111,8 +132,29 @@ init_global_data() {
 		--icon_path)
 			icon_path="$val"
 			;;
+		--build_extra_args)
+			build_extra_args="$val"
+			;;
+		--nested_script)
+			nested_script="$val"
+			;;
 		esac
 	done
+
+	# 支持禁用 runtime：--runtime_id= 為空 或 值為 "-" 時禁用 runtime
+	# 禁用後會同步刪除 linglong.yaml 中的 runtime 字段
+	if [ -z "${runtime_id}" ] || [ "${runtime_id}" = "-" ]; then
+		runtime_id=""
+		runtime_version=""
+		runtime_disabled=1
+	else
+		runtime_disabled=0
+	fi
+
+	# 統一管理 ll_id：由 --package_id / --ll_id 指定
+	if [ -z "${ll_id}" ]; then
+		ll_id="${package_id}"
+	fi
 
 	# 初始化構建緩存目錄
 	if [ -n "${build_tmp_dir}" ]; then
@@ -147,12 +189,17 @@ validate_base_runtime() {
 	local has_error=0
 	local has_warning=0
 
+	# runtime 禁用時（runtime_disabled=1）僅驗證 base，不驗證 runtime
 	local fields=(
 		"base_id:${base_id}:org[0-9a-z]*\\.[0-9a-z][0-9a-z.]*:基礎運行時ID"
 		"base_version:${base_version}:版本號:基礎運行時版本"
-		"runtime_id:${runtime_id}:org[0-9a-z]*\\.[0-9a-z][0-9a-z.]*:應用運行時ID"
-		"runtime_version:${runtime_version}:版本號:應用運行時版本"
 	)
+	if [ "${runtime_disabled}" -eq 0 ]; then
+		fields+=(
+			"runtime_id:${runtime_id}:org[0-9a-z]*\\.[0-9a-z][0-9a-z.]*:應用運行時ID"
+			"runtime_version:${runtime_version}:版本號:應用運行時版本"
+		)
+	fi
 
 	for field_def in "${fields[@]}"; do
 		IFS=: read -r field_name field_value _ field_desc <<<"${field_def}"
@@ -198,12 +245,45 @@ validate_base_runtime_whitelist() {
 		return 0
 	fi
 
-	if grep -q "^${base_id}/${base_version}:${runtime_id}/${runtime_version}$" "${whitelist_file}"; then
-		echo "白名單驗證通過: ${base_id}/${base_version}:${runtime_id}/${runtime_version}"
+	# 在白名單中查找（跳過注釋和空行）
+	# 格式：<base_id>/<base_version> <runtime_id>/<runtime_version> <描述>
+	# runtime_id 可為 "-" 表示無需 runtime（純 base 應用）
+	local found=0
+	while IFS= read -r line || [ -n "${line}" ]; do
+		[[ "${line}" =~ ^[[:space:]]*# ]] && continue
+		[[ "${line}" =~ ^[[:space:]]*$ ]] && continue
+
+		local wl_base wl_runtime
+		read -r wl_base wl_runtime _ <<<"${line}"
+
+		if [ "${wl_base}" = "${base_id}/${base_version}" ]; then
+			# 精確匹配 base + runtime 組合
+			if [ "${runtime_disabled}" -eq 0 ] && [ "${wl_runtime}" = "${runtime_id}/${runtime_version}" ]; then
+				found=1
+				break
+			fi
+			# 匹配無 runtime 的情況（runtime 禁用時）
+			if [ "${runtime_disabled}" -eq 1 ] && [ "${wl_runtime}" = "-" ]; then
+				found=1
+				break
+			fi
+		fi
+	done <"${whitelist_file}"
+
+	if [ "${found}" -eq 1 ]; then
+		if [ "${runtime_disabled}" -eq 0 ]; then
+			echo "白名單驗證通過: ${base_id}/${base_version} + ${runtime_id}/${runtime_version}"
+		else
+			echo "白名單驗證通過: ${base_id}/${base_version} + 無 runtime（-）"
+		fi
 		return 0
 	else
 		echo "錯誤: base/runtime 組合不在白名單中" >&2
-		echo "  當前: ${base_id}/${base_version}:${runtime_id}/${runtime_version}" >&2
+		if [ "${runtime_disabled}" -eq 0 ]; then
+			echo "  當前: ${base_id}/${base_version} + ${runtime_id}/${runtime_version}" >&2
+		else
+			echo "  當前: ${base_id}/${base_version} + 無 runtime（-）" >&2
+		fi
 		echo "  請查看 ${whitelist_file} 获取合規組合" >&2
 		return 1
 	fi
@@ -480,6 +560,11 @@ validate_required_fields() {
 		exit 1
 	fi
 
+	if [ -z "${ll_id}" ]; then
+		echo "請指定 ll_id（可通過 --package_id 或 --ll_id 指定）" >&2
+		exit 1
+	fi
+
 	if [ -z "${linyaps_arch}" ]; then
 		linyaps_arch=$(uname -m)
 	fi
@@ -524,6 +609,7 @@ build_dir_init() {
 	## base/runtime 由 build_pak() 透過 sed 延遲注入
 	export prefix="\$PREFIX"
 	export package_id="${package_id}"
+	export ll_id=${ll_id}
 	export app_name="${app_name}"
 	export description="${description}"
 	export ll_version=${ll_version}
@@ -541,6 +627,15 @@ build_dir_init() {
 		echo "  version 字段已被 LLM 錯誤替換為絕對值，envsubst 將無法正確替換" >&2
 		echo "  請檢查: ${project_root}/templates/linglong.yaml" >&2
 		echo "  兩個 version 字段（頂層 version 和 package.version）都必須保持為 \${ll_version}" >&2
+		exit 1
+	fi
+
+	# 檢測模板中的 id 字段是否仍為變量（不允許為實值）
+	if ! grep -q '\${ll_id}' "${project_root}/templates/linglong.yaml" 2>/dev/null; then
+		echo "錯誤: linglong.yaml 模板中未找到 \${ll_id} 變量！" >&2
+		echo "  package.id 字段已被錯誤替換為絕對值，envsubst 將無法正確替換" >&2
+		echo "  請檢查: ${project_root}/templates/linglong.yaml" >&2
+		echo "  package.id 必須保持為 \${ll_id}" >&2
 		exit 1
 	fi
 }
@@ -569,7 +664,7 @@ build_pak() {
 	#    例如：/opt/uTools/ -> binary/uTools/ (去掉 opt/ 層級)
 	# 3. 支持包含空格、括號、中文、&、@、#、$ 等特殊字符的路徑
 	# 注意：此操作必須在所有軟鏈動作之前完成，否則軟鏈關係將被破壞
-	"${project_root}/scripts/handle_special_paths.sh" "${binary_tmp_dir}" "${binary_dir}"
+	"${project_root}/scripts/handle_special_paths.sh" --phase=paths "${binary_tmp_dir}" "${binary_dir}"
 
 	# 創建 bin/ 目錄用於存放 wrapper 腳本
 	# 注意：此操作必須在特殊路徑處理完成之後進行
@@ -689,17 +784,44 @@ build_pak() {
 			# wrapper 位於 bin/ 目錄，使用相對路徑直接指向原始二進制
 			# 文件名使用 .wrapper 後綴，避免與原始二進制名衝突
 			# 注意：使用 \$@ 而非 $@，防止 envsubst 替換
+			# rel_binary 可能包含中文/特殊字符，先用 shell_escape 轉義確保 bash 安全加載
+			local escaped_rel
+			escaped_rel=$(shell_escape "${rel_binary}")
 			cat >"${binary_dir}/bin/${binary_name}.wrapper" <<WRAPPER_EOF
 #!/bin/bash
 # Wrapper script generated by pak_linyaps.sh
 # 使用 cd+pwd 解析 wrapper 自身的絕對路徑，確保 \$PATH 執行時也能正確工作
 script_dir="\$(cd "\$(dirname "\$0")" && pwd)"
-exec "\${script_dir}/../${rel_binary}" "\$@"
+exec "\${script_dir}/../${escaped_rel}" "\$@"
 WRAPPER_EOF
 
 			chmod +x "${binary_dir}/bin/${binary_name}.wrapper"
 			echo "Created wrapper script: bin/${binary_name}.wrapper -> ../${rel_binary}"
 			echo "  (wrapper resolves absolute path first, then uses relative path)"
+
+			# 默認 exec 目標：原 wrapper
+			local exec_target="${binary_name}.wrapper"
+
+			# === 嵌套腳本支持 ===
+			# 開啟條件：--nested_script=<文件名>，腳本位於工程根目錄 ${project_root}/<文件名>
+			# 啟用後：command 與 desktop Exec 均指向嵌套腳本（bin/ 相對路徑），
+			#         腳本內約定變量 ${wrapper} 替換為同目錄 wrapper 文件名
+			if [ -n "${nested_script}" ]; then
+				local nested_src="${project_root}/${nested_script}"
+				if [ ! -f "${nested_src}" ]; then
+					echo "[警告] 嵌套腳本不存在: ${nested_src}，回退到原 wrapper: ${exec_target}" >&2
+				else
+					cp -f "${nested_src}" "${binary_dir}/bin/${nested_script}"
+					if grep -q '\${wrapper}' "${binary_dir}/bin/${nested_script}"; then
+						sed -i "s|\${wrapper}|${binary_name}.wrapper|g" "${binary_dir}/bin/${nested_script}"
+						chmod +x "${binary_dir}/bin/${nested_script}"
+						exec_target="${nested_script}"
+						echo "嵌套腳本已啟用，exec 目標改為 bin/${nested_script}"
+					else
+						echo "[警告] 嵌套腳本中未找到 \${wrapper} 變量，回退到原 wrapper: ${exec_target}" >&2
+					fi
+				fi
+			fi
 
 			# 更新 linglong.yaml 的 command 字段
 			# 將 command 設置為 wrapper 腳本路徑（數組格式，ll-builder 要求）
@@ -709,8 +831,8 @@ WRAPPER_EOF
 				# 2. 替換 command 行
 				sed -i "s|^\s*command:.*|command:|" "${build_tmp_dir}/linglong.yaml"
 				# 3. 在 command 行後追加列表項（YAML 數組格式）
-				sed -i '/^\s*command:/a\  - '"${binary_name}"'.wrapper' "${build_tmp_dir}/linglong.yaml"
-				echo "Updated linglong.yaml command to array format: [${binary_name}.wrapper]"
+				sed -i "/^\s*command:/a\  - ${exec_target}" "${build_tmp_dir}/linglong.yaml"
+				echo "Updated linglong.yaml command to array format: [${exec_target}]"
 			fi
 
 			# 更新 desktop 文件的 Exec= 字段
@@ -748,14 +870,14 @@ WRAPPER_EOF
 							exec_args="${filtered_args# }"
 						fi
 						# 替換為 wrapper
-						new_exec="Exec=${binary_name}.wrapper"
+						new_exec="Exec=${exec_target}"
 						if [ -n "${exec_args}" ]; then
 							new_exec="${new_exec} ${exec_args}"
 						fi
 						# 在文件中替換該行
 						sed -i "s|${exec_line}|${new_exec}|" "${desktop_file}"
 					done < <(grep "^Exec=" "${desktop_file}")
-					echo "Updated Exec= in: ${desktop_file} (custom binary: ${binary_name}.wrapper)"
+					echo "Updated Exec= in: ${desktop_file} (custom binary: ${exec_target})"
 				else
 					# 自動偵測模式：只替換 Exec= 包含 binary_name 的行
 					# 處理 env 前綴，提取 args，必要時過濾風險參數
@@ -784,7 +906,7 @@ WRAPPER_EOF
 									done
 									exec_args="${filtered_args# }"
 								fi
-								new_exec="Exec=${binary_name}.wrapper"
+								new_exec="Exec=${exec_target}"
 								if [ -n "${exec_args}" ]; then
 									new_exec="${new_exec} ${exec_args}"
 								fi
@@ -809,8 +931,14 @@ WRAPPER_EOF
 	if [ -f "${build_tmp_dir}/linglong.yaml" ]; then
 		sed -i "s|^\s*base:.*|base: ${base_id}/${base_version}|" "${build_tmp_dir}/linglong.yaml"
 		echo "Updated linglong.yaml base: ${base_id}/${base_version}"
-		sed -i "s|^\s*runtime:.*|runtime: ${runtime_id}/${runtime_version}|" "${build_tmp_dir}/linglong.yaml"
-		echo "Updated linglong.yaml runtime: ${runtime_id}/${runtime_version}"
+		if [ "${runtime_disabled}" -eq 0 ]; then
+			sed -i "s|^\s*runtime:.*|runtime: ${runtime_id}/${runtime_version}|" "${build_tmp_dir}/linglong.yaml"
+			echo "Updated linglong.yaml runtime: ${runtime_id}/${runtime_version}"
+		else
+			# runtime 禁用：刪除 linglong.yaml 中的 runtime 字段
+			sed -i "/^\s*runtime:/d" "${build_tmp_dir}/linglong.yaml"
+			echo "runtime 已禁用，已刪除 linglong.yaml 中的 runtime 字段"
+		fi
 	fi
 
 	# 第一步去重：刪除 binary/ 中與 files_res/ 內容重複的 desktop 文件
@@ -829,10 +957,6 @@ WRAPPER_EOF
 	# 檢測 binary/bin/bin/ 嵌套問題並自動修復
 	"${project_root}/scripts/validate_bin_nesting.sh" "${binary_dir}" --fix
 
-	# 修復非標準目錄的 .so 軟鏈接
-	# 在 binary/lib/ 下為所有非標準目錄的 ELF 共享庫創建相對路徑軟鏈接
-	"${project_root}/scripts/fix_nonstd_lib_symlinks.sh" "${binary_dir}"
-
 	# 外部缺失依賴下載與解壓（由 bin2linyaps.external-missing-deps-fetch skill 提供）
 	# 檢測到 missing_deps_urls.conf 時，自動調用 download_missing_deps.sh 將缺失 deb 下載并解壓到 binary_dir
 	# 即使下載或解壓失敗也不阻塞後續構建流程（非阻塞設計）
@@ -847,6 +971,11 @@ WRAPPER_EOF
 		echo "未檢測到缺失依賴配置 (missing_deps_urls.conf)，跳過"
 	fi
 
+	# 修復非標準目錄的 .so 軟鏈接（必須在打包前最後執行，確保覆蓋所有下載解壓進來的庫）
+	# 在 binary/lib/ 下為所有非標準目錄及多架構子目錄的 ELF 共享庫創建相對路徑軟鏈接，
+	# 並補全 SONAME 級軟鏈（如 libtiff.so.5），保證 $PREFIX/lib 下動態鏈接器能加載
+	"${project_root}/scripts/handle_special_paths.sh" --phase=libfix "${binary_dir}"
+
 	# 創建玲瓏構建標識文件
 	# binary/ 目錄對應 linglong.yaml 中的 ${prefix}
 	# 此文件用於標識由 linyaps 系統生成的構建產物
@@ -854,7 +983,7 @@ WRAPPER_EOF
 	echo "Created identity file: ${binary_dir}/.linyaps_genius"
 
 	## Building & Exporting
-	ll-builder build --skip-output-check
+	ll-builder build ${build_extra_args}
 	building_status=$?
 	if [ "${building_status}" = "0" ]; then
 		echo "Building success ! "

@@ -76,15 +76,19 @@ mkdir -p "${project_dir}/templates/files_res"
 mkdir -p "${project_dir}/scripts"
 mkdir -p "${project_dir}/config"
 
-# 拷贝辅助脚本
+# 拷贝辅助脚本（handle_special_paths.sh 规范源位于 scripts/，为双模式综合脚本）
 cp "scripts/handle_special_paths.sh" "${project_dir}/scripts/"
 chmod +x "${project_dir}/scripts/handle_special_paths.sh"
+cp "scripts/dedup_desktop_files.sh" "${project_dir}/scripts/"
+chmod +x "${project_dir}/scripts/dedup_desktop_files.sh"
+cp "scripts/validate_bin_nesting.sh" "${project_dir}/scripts/"
+chmod +x "${project_dir}/scripts/validate_bin_nesting.sh"
 cp "scripts/download_missing_deps.sh" "${project_dir}/scripts/"
 chmod +x "${project_dir}/scripts/download_missing_deps.sh"
 
 # 拷贝入口脚本分析器（用于检测使用 $1/$2 的风险脚本）
-if [ -f "templates/scripts/analyze_entry_script.sh" ]; then
-  cp "templates/scripts/analyze_entry_script.sh" "${project_dir}/scripts/"
+if [ -f "scripts/analyze_entry_script.sh" ]; then
+  cp "scripts/analyze_entry_script.sh" "${project_dir}/scripts/"
   chmod +x "${project_dir}/scripts/analyze_entry_script.sh"
 fi
 
@@ -269,6 +273,31 @@ org.deepin.base/25.2.2	-	純 base 應用
 
 ### 3. 生成 pak_linyaps.sh
 
+从 `templates/pak_linyaps.sh` **完整复制**（不得手写、简化或删除任何函数/脚本调用）。生成后必须写入 `ll_id`，否则构建时会因 `ll_id` 为空而失败：
+
+```bash
+# 拷贝规范模板
+cp "${skill_root}/templates/pak_linyaps.sh" "${project_dir}/"
+chmod +x "${project_dir}/pak_linyaps.sh"
+
+# ⚠️ 关键：将模板中的 ll_id="" 替换为实际包名（新版本 pak_linyaps 通过该变量 envsubst 生成 linglong.yaml 的 id）
+sed -i 's/^[[:space:]]*ll_id=""/ll_id="'"${package_id}"'"/' "${project_dir}/pak_linyaps.sh"
+
+# ⚠️ 写入 binary_name（仅当 CSV/配置已提供非空值时）：
+#    通过 sed 精确替换 init_global_data() 内唯一的 binary_name="" 声明行。
+#    该声明位于 CLI 解析循环之前，运行时 --binary_name 参数仍可覆盖它。
+#    binary_name 为空时保持模板默认 binary_name=""（build_pak 将自动从 desktop 文件提取兜底）。
+if [ -n "${binary_name}" ]; then
+	sed -i 's|^[[:space:]]*binary_name=""|binary_name="'"${binary_name}"'"|' "${project_dir}/pak_linyaps.sh"
+fi
+```
+
+> **重要：**
+> - `ll_id` 由 `--package_id`（主入口）/ `--ll_id`（覆盖）统一管理，`init_global_data()` 中缺省回退 `ll_id="${package_id}"`。
+> - 生成的 `pak_linyaps.sh` 中 `ll_id` **必须非空**；请将模板默认的 `ll_id=""` 替换为实际包名，或确保调用时传入 `--package_id=<id>`。
+> - `templates/linglong.yaml` 的 `package.id` 必须保留为 `${ll_id}` **变量**（不得硬编码为绝对包名），由 `pak_linyaps.sh` 在构建时 `envsubst` 替换。
+> - **`binary_name` 定制能力**：`binary_name` 在 `init_global_data()` 内唯一声明，支持 `--binary_name=<name>` 运行时覆盖（优先级高于声明值）。声明值为空时，`build_pak()` 会自动从 desktop 文件的 Exec 字段提取兜底。**禁止**在 pak_linyaps.sh 顶部另插 `binary_name=...`，否则会与模板默认值双重声明、被后执行的默认值覆盖而失效。
+
 参考 `CI_ll_com.visualstudio.code/pak_linyaps.sh` 模板：
 
 ```bash
@@ -386,7 +415,7 @@ build_pak() {
   #    例如：/opt/uTools/ -> binary/uTools/ (去掉 opt/ 层级)
   # 3. 支持包含空格、括号、中文、&、@、#、$ 等特殊字符的路径
   # 注意：此操作必须在所有软链动作之前完成，否则软链关系将被破坏
-  "${project_root}/scripts/handle_special_paths.sh" "${binary_tmp_dir}" "${binary_dir}"
+  "${project_root}/scripts/handle_special_paths.sh" --phase=paths "${binary_tmp_dir}" "${binary_dir}"
   
   # 创建 bin/ 目录用于存放可执行文件软链
   # 注意：此操作必须在特殊路径处理完成之后进行
@@ -423,7 +452,7 @@ build_pak() {
   touch "${binary_dir}/.linyaps_genius"
   echo "Created identity file: ${binary_dir}/.linyaps_genius"
 
-  ll-builder build --skip-output-check
+  ll-builder build ${build_extra_args}   # 默认 --skip-output-check，可用 --build_extra_args 覆盖
   building_status=$?
   if [ "${building_status}" = "0" ]; then
     echo "Building success!"
@@ -509,15 +538,19 @@ with open('config/packages.csv', 'r') as f:
 |-----|------|------|
 | `--src_path` | 是 | deb包完整路径 |
 | `--output_dir` | 是 | 输出目录 |
+| `--package_id` | 二选一 | 玲珑包 ID（反向域名格式），ll_id 的主要入口 |
+| `--ll_id` | 二选一 | 玲珑包 ID（反向域名格式），可覆盖 `--package_id` |
 | `--ll_version` | 二选一 | 玲珑格式版本 (x.x.x.x) |
 | `--origin_version` | 二选一 | 原始版本号（自动转换为玲珑格式） |
 | `--linyaps_arch` | 否 | 目标架构 (x86_64/arm64)，默认当前系统架构 |
 | `--build_tmp_dir` | 否 | 构建缓存目录，未指定时使用临时目录 |
 | `--base_id` | 否 | 基础运行时ID（如 org.deepin.base），默认使用白名单中推荐的组合 |
 | `--base_version` | 否 | 基础运行时版本（如 25.2.2） |
-| `--runtime_id` | 否 | 应用运行时ID（如 org.deepin.runtime.dtk） |
+| `--runtime_id` | 否 | 应用运行时ID（如 org.deepin.runtime.dtk）。**传空值 `--runtime_id=` 或 `--runtime_id=-` 可禁用 runtime**（纯 base 应用），禁用后 linglong.yaml 的 `runtime:` 字段会被删除 |
 | `--runtime_version` | 否 | 应用运行时版本（如 25.2.2） |
 | `--whitelist` | 否 | 白名单配置文件路径，未指定时按优先级自动查找（工程→skill→全局） |
+| `--build_extra_args` | 否 | 额外构建参数，原样追加到 `ll-builder build`（默认 `--skip-output-check`，覆盖时需自行包含，如 `--skip-output-check --skip-strip-symbols`） |
+| `--nested_script` | 否 | 嵌套脚本文件名（仅填文件名，路径自动拼接为 `${project_root}/<文件名>`），空值关闭。开启后 command 与 desktop Exec 指向嵌套脚本 |
 
 **注意：**
 - `${command}` 在模板中为占位符，实际值由 `pak_linyaps.sh` 在构建时通过 wrapper 机制动态设置
@@ -551,6 +584,39 @@ exec "${script_dir}/../uTools/utools" "$@"
 1. **路径解析问题**：许多应用使用 `dirname $0` 来定位资源文件，软链会导致路径解析错误
 2. **相对路径支持**：wrapper 通过 `cd + pwd` 解析绝对路径，确保 `$PATH` 执行时也能正确工作
 3. **自动化处理**：无需手动修改 desktop 文件和 linglong.yaml，减少错误
+
+## 嵌套脚本支持（Nested Script）
+
+某些应用需要以"嵌套脚本"方式启动：最终入口不是 wrapper，而是用户提供的嵌套 bash 脚本，脚本内通过约定变量 `${wrapper}` 代指 pak_linyaps 自动解析出的 wrapper，形成 `command/desktop → 嵌套脚本 → wrapper → 实际二进制` 的启动链。
+
+### 使用方式
+
+- 将嵌套脚本放置于工程根目录（与 `pak_linyaps.sh` 同级），脚本内使用 `${wrapper}` 代指 wrapper。
+- 开启开关（仅填文件名，路径自动拼接为 `${project_root}/<文件名>`）：
+
+```bash
+./pak_linyaps.sh ... --nested_script=my_launcher.sh
+```
+
+### 嵌套脚本示例
+
+```bash
+#!/bin/bash
+# my_launcher.sh - 由用户提供，放在工程根目录
+script_dir="$(cd "$(dirname "$0")" && pwd)"
+exec "${script_dir}/${wrapper}" "$@"
+```
+
+构建后 `${wrapper}` 会被替换为同目录 wrapper 文件名（deb 为 `${binary_name}.wrapper`），并复制到 `${prefix}/bin/` 且赋予执行权限；linglong.yaml 的 `command` 与 desktop 的 `Exec=` 均指向该嵌套脚本。
+
+### 回退策略
+
+以下情况会告警并回退到原 wrapper（`command`/`Exec=` 仍指向 wrapper）：
+
+1. 嵌套脚本文件不存在。
+2. 脚本内未找到 `${wrapper}` 变量。
+
+开关未指定（`nested_script` 为空）时，行为完全不变。
 
 ### ⚠️ Agent 注意事项
 
@@ -641,7 +707,7 @@ build_pak() {
   #    例如：/opt/uTools/ -> binary/uTools/ (去掉 opt/ 层级)
   # 3. 支持包含空格、括号、中文、&、@、#、$ 等特殊字符的路径
   # 注意：此操作必须在所有软链动作之前完成，否则软链关系将被破坏
-  "${project_root}/scripts/handle_special_paths.sh" "${binary_tmp_dir}" "${binary_dir}"
+  "${project_root}/scripts/handle_special_paths.sh" --phase=paths "${binary_tmp_dir}" "${binary_dir}"
   
   # 创建 bin/ 目录用于存放可执行文件软链
   # 注意：此操作必须在特殊路径处理完成之后进行
@@ -696,10 +762,9 @@ build_pak() {
 
 | 脚本 | 作用 | 删除后果 |
 |------|------|---------|
-| `dedup_desktop_files.sh` | desktop 文件去重 | 重复文件进入最终包，可能导致冲突 |
+| `dedup_desktop_files.sh` | desktop 文件去重（完整 Exec 值精确匹配；跨目录时 `files_res/` 权威，exec 存在性校验，`NoDisplay=true` 始终保留） | 重复文件进入最终包，可能导致冲突 |
 | `validate_bin_nesting.sh` | bin 目录嵌套验证 | 嵌套路径问题导致启动失败 |
-| `fix_nonstd_lib_symlinks.sh` | 非标准目录 .so 软链修复 | 非 lib/ 目录的 ELF 库无法被 ldconfig 加载 |
-| `handle_special_paths.sh` | 特殊路径处理 | 非 `/usr` 路径文件丢失 |
+| `handle_special_paths.sh` | 特殊路径处理 + .so 软链修复（双模式） | 非 `/usr` 路径文件丢失 / 非 lib/ 目录的 ELF 库无法被 ldconfig 加载 |
 
 #### 1.2 禁止提前填充 command
 
@@ -764,7 +829,7 @@ export runtime_version=${runtime_version}
 # 错误3：跳过脚本调用
 # （缺失 dedup_desktop_files.sh 调用）
 # （缺失 validate_bin_nesting.sh 调用）
-# （缺失 fix_nonstd_lib_symlinks.sh 调用）
+# （缺失 handle_special_paths.sh --phase=libfix 调用）
 
 # 错误4：linglong.yaml command 被错误填充
 # command: ""  被错误地替换为 ${binary_name:-run.sh}
@@ -794,15 +859,20 @@ sed -i "s|^\s*command:.*|command:|" "${build_tmp_dir}/linglong.yaml"
 sed -i '/^\s*command:/a\  - '"${binary_name}"'.wrapper' "${build_tmp_dir}/linglong.yaml"
 
 # 正确6：wrapper 创建后动态注入 base/runtime
+# runtime 启用时注入 runtime 字段；禁用时（--runtime_id= 或 --runtime_id=-）删除 runtime 字段
 sed -i "s|^\s*base:.*|base: ${base_id}/${base_version}|" "${build_tmp_dir}/linglong.yaml"
-sed -i "s|^\s*runtime:.*|runtime: ${runtime_id}/${runtime_version}|" "${build_tmp_dir}/linglong.yaml"
+if [ "${runtime_disabled}" -eq 0 ]; then
+  sed -i "s|^\s*runtime:.*|runtime: ${runtime_id}/${runtime_version}|" "${build_tmp_dir}/linglong.yaml"
+else
+  sed -i "/^\s*runtime:/d" "${build_tmp_dir}/linglong.yaml"
+fi
 ```
 
 ### 3. 生成后自检清单
 
 生成 `pak_linyaps.sh` 后，**必须**检查以下内容：
 
-- [ ] **脚本调用完整性**：`dedup_desktop_files.sh`、`validate_bin_nesting.sh`、`fix_nonstd_lib_symlinks.sh`、`handle_special_paths.sh` 调用存在
+- [ ] **脚本调用完整性**：`dedup_desktop_files.sh`、`validate_bin_nesting.sh`、`handle_special_paths.sh`（`--phase=paths` 与 `--phase=libfix`）调用存在
 - [ ] **command 未提前填充**：`build_dir_init()` 中无 `export command=` 行
 - [ ] **模板路径正确**：使用 `${project_root}/templates/linglong.yaml`（模板文件位于 templates/ 目录）
 - [ ] **资源路径正确**：使用 `${project_root}/templates/files_res`（资源文件位于 templates/ 目录）
@@ -887,8 +957,13 @@ export linyaps_arch=${linyaps_arch}
 cat "${project_root}/templates/linglong.yaml" | envsubst >"${build_tmp_dir}/linglong.yaml"
 
 # 在 build_pak() 中，wrapper 创建后通过 sed 注入 base/runtime
+# runtime 启用时注入；禁用时（--runtime_id= 或 --runtime_id=-）删除 runtime 字段
 sed -i "s|^\s*base:.*|base: ${base_id}/${base_version}|" "${build_tmp_dir}/linglong.yaml"
-sed -i "s|^\s*runtime:.*|runtime: ${runtime_id}/${runtime_version}|" "${build_tmp_dir}/linglong.yaml"
+if [ "${runtime_disabled}" -eq 0 ]; then
+  sed -i "s|^\s*runtime:.*|runtime: ${runtime_id}/${runtime_version}|" "${build_tmp_dir}/linglong.yaml"
+else
+  sed -i "/^\s*runtime:/d" "${build_tmp_dir}/linglong.yaml"
+fi
 ```
 
 **原因：**
@@ -988,8 +1063,7 @@ validate_base_runtime
 **脚本调用完整性：**
 - [ ] `dedup_desktop_files.sh` 调用存在（desktop 文件去重）
 - [ ] `validate_bin_nesting.sh` 调用存在（bin 目录嵌套验证）
-- [ ] `fix_nonstd_lib_symlinks.sh` 调用存在（非标准目录 .so 软链修复）
-- [ ] `handle_special_paths.sh` 调用存在（特殊路径处理）
+- [ ] `handle_special_paths.sh` 调用存在（特殊路径处理 `--phase=paths`，非标准目录 .so 软链修复 `--phase=libfix`）
 
 **command/base/runtime 处理正确性：**
 - [ ] `build_dir_init()` 中**无** `export command=` 行（command 由 wrapper 机制设置）

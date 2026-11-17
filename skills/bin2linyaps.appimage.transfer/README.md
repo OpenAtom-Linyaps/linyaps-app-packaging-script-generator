@@ -29,7 +29,7 @@ bin2linyaps.appimage.transfer/
 │   ├── parse_appimage_metadata.sh # 元数据提取脚本
 │   ├── parse_build_config.sh   # 配置解析脚本
 │   ├── validate_bin_nesting.sh # 嵌套路径修复脚本
-│   └── fix_nonstd_lib_symlinks.sh  # 非标准库软链修复脚本
+│   └── handle_special_paths.sh # 特殊路径处理 + .so 软链修复（双模式综合脚本）
 ├── templates/                  # 模板文件
 │   ├── linglong.yaml           # 玲珑包模板
 │   ├── pak_linyaps.sh          # 主构建脚本（待创建）
@@ -73,12 +73,12 @@ cat ../docs/bin2linyaps.appimage.transfer.README.md
 
 ## 脚本说明
 
-### 0. fix_nonstd_lib_symlinks.sh
-**功能**：扫描非标准目录的 ELF 共享库，在 `lib/` 下创建相对路径软链接
+### 0. handle_special_paths.sh（--phase=libfix）
+**功能**：扫描非标准目录及多架构子目录的 ELF 共享库，在 `lib/` 下创建相对路径软链接，并补全 SONAME 级软链（如 `libtiff.so.5`）
 
 **用法**：
 ```bash
-./scripts/fix_nonstd_lib_symlinks.sh <binary_dir>
+./scripts/handle_special_paths.sh --phase=libfix <binary_dir>
 ```
 
 **流程**：

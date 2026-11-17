@@ -1,27 +1,31 @@
 #!/bin/bash
-# 特殊格式路径处理脚本
-# 用于处理 deb 包解压后包含特殊字符路径的转换逻辑
+# 特殊格式路径处理综合脚本
+# 用于处理 deb 包解压后包含特殊字符路径的转换逻辑，以及 $PREFIX/lib 下 .so 软链补全
 #
-# 功能：
-# 1. 处理 /usr/ 下的标准目录
-# 2. 处理 /opt/、/var/、/srv/ 等非标准路径
-# 3. 标准化目录名（处理空格、特殊字符等）
-# 4. 生成路径映射文件，供软链创建使用
+# 双阶段（--phase）：
+#   paths   - 处理 /usr/、/opt/、/var/、/srv/ 等路径层级剥离与特殊字符标准化（默认）
+#   libfix  - 在 binary/lib/ 下为所有非标准目录及多架构子目录的 ELF 共享库
+#             创建相对路径软链，并补全 SONAME 级软链（如 libtiff.so.5）
+#             保证动态链接器能在 $PREFIX/lib 找到库的 SONAME
 #
 # 用法：
-#   handle_special_paths.sh <src_dir> <dest_dir> [--verbose]
+#   handle_special_paths.sh [--phase=paths|libfix] <src_dir> <dest_dir> [--verbose]   (paths)
+#   handle_special_paths.sh [--phase=libfix] <dest_dir> [--verbose]                    (libfix)
 #
 # 参数：
-#   src_dir   - deb 包解压后的源目录（如 binary_tmp_dir）
-#   dest_dir  - 目标目录（如 binary_dir）
-#   --verbose - 可选，显示详细日志
+#   --phase=paths  - 路径转换阶段（默认，需要 src_dir 与 dest_dir）
+#   --phase=libfix - .so 软链补全阶段（仅需 dest_dir，如 binary_dir）
+#   src_dir        - deb 包解压后的源目录（如 binary_tmp_dir）
+#   dest_dir       - 目标目录（如 binary_dir）
+#   --verbose      - 可选，显示详细日志
 #
 # 输出：
-#   在 dest_dir 下生成 .path_mapping 文件，记录原始路径到标准化路径的映射
-#   格式: 原始目录名|标准化目录名
+#   paths 阶段：在 dest_dir 下生成 .path_mapping 文件，记录原始路径到标准化路径的映射
+#   libfix 阶段：在 dest_dir/lib/ 下创建所需的 .so 软链
 #
 # 示例：
-#   handle_special_paths.sh /tmp/build/tmp /tmp/build/binary --verbose
+#   handle_special_paths.sh --phase=paths /tmp/build/tmp /tmp/build/binary --verbose
+#   handle_special_paths.sh --phase=libfix /tmp/build/binary
 
 set -e
 
@@ -37,6 +41,7 @@ NC='\033[0m' # No Color
 
 # 全局变量
 VERBOSE=false
+PHASE="paths"
 SRC_DIR=""
 DEST_DIR=""
 PATH_MAPPING_FILE=""
@@ -71,37 +76,68 @@ log_warning() {
 
 # 显示使用说明
 usage() {
-	echo "用法: $0 <src_dir> <dest_dir> [--verbose]"
+	echo "用法: $0 [--phase=paths|libfix] <参数>"
+	echo ""
+	echo "阶段:"
+	echo "  --phase=paths  路径转换阶段（默认）"
+	echo "    用法: $0 --phase=paths <src_dir> <dest_dir> [--verbose]"
+	echo "  --phase=libfix  .so 软链补全阶段"
+	echo "    用法: $0 --phase=libfix <dest_dir> [--verbose]"
 	echo ""
 	echo "参数:"
 	echo "  src_dir   - deb 包解压后的源目录"
-	echo "  dest_dir  - 目标目录"
+	echo "  dest_dir  - 目标目录（paths）或 binary 目录（libfix）"
 	echo "  --verbose - 显示详细日志"
 	echo ""
-	echo "输出:"
-	echo "  在 dest_dir 下生成 .path_mapping 文件"
-	echo ""
 	echo "示例:"
-	echo "  $0 /tmp/build/tmp /tmp/build/binary"
-	echo "  $0 /tmp/build/tmp /tmp/build/binary --verbose"
+	echo "  $0 --phase=paths /tmp/build/tmp /tmp/build/binary"
+	echo "  $0 --phase=libfix /tmp/build/binary"
 }
 
 # 解析参数
 parse_args() {
-	if [ $# -lt 2 ]; then
-		usage
-		exit 1
+	for arg in "$@"; do
+		case "${arg}" in
+		--phase=*)
+			PHASE="${arg#--phase=}"
+			;;
+		--verbose)
+			VERBOSE=true
+			;;
+		esac
+	done
+
+	# 过滤掉已解析的参数，得到位置参数
+	local positional=()
+	for arg in "$@"; do
+		case "${arg}" in
+		--phase=* | --verbose)
+			;;
+		*)
+			positional+=("${arg}")
+			;;
+		esac
+	done
+
+	if [ "${PHASE}" = "libfix" ]; then
+		# libfix 阶段只需要 dest_dir（即 binary 目录）
+		if [ ${#positional[@]} -lt 1 ]; then
+			usage
+			exit 1
+		fi
+		DEST_DIR="${positional[0]}"
+	else
+		# paths 阶段需要 src_dir 与 dest_dir
+		if [ ${#positional[@]} -lt 2 ]; then
+			usage
+			exit 1
+		fi
+		SRC_DIR="${positional[0]}"
+		DEST_DIR="${positional[1]}"
 	fi
 
-	SRC_DIR="$1"
-	DEST_DIR="$2"
-
-	if [ "$3" = "--verbose" ]; then
-		VERBOSE=true
-	fi
-
-	# 验证源目录存在
-	if [ ! -d "${SRC_DIR}" ]; then
+	# 验证源目录存在（paths 阶段）
+	if [ "${PHASE}" != "libfix" ] && [ ! -d "${SRC_DIR}" ]; then
 		log_error "源目录不存在: ${SRC_DIR}"
 		exit 1
 	fi
@@ -109,14 +145,19 @@ parse_args() {
 	# 创建目标目录
 	mkdir -p "${DEST_DIR}"
 
-	# 初始化路径映射文件
-	PATH_MAPPING_FILE="${DEST_DIR}/.path_mapping"
-	echo "# 原始目录名|标准化目录名" >"${PATH_MAPPING_FILE}"
-	echo "# 生成时间: $(date)" >>"${PATH_MAPPING_FILE}"
+	if [ "${PHASE}" = "paths" ]; then
+		# 初始化路径映射文件
+		PATH_MAPPING_FILE="${DEST_DIR}/.path_mapping"
+		echo "# 原始目录名|标准化目录名" >"${PATH_MAPPING_FILE}"
+		echo "# 生成时间: $(date)" >>"${PATH_MAPPING_FILE}"
+	fi
 }
 
 # 标准化目录名
-# 将空格、逗号、括号、&、@、#、$ 等特殊字符和中文替换为安全字符
+# 将空格、逗号、括号、&、@、#、$ 等会破坏 shell 解析的特殊字符替换为安全字符
+# 非 ASCII 字符（中文等）原样保留：它们在文件系统与双引号 bash 字符串中均合法，
+# 无需改名为 ASCII（改名会丢失原始文件名语义）。若需嵌入 bash 脚本，由
+# pak_linyaps.sh 的 shell_escape() 负责转义。
 normalize_dirname() {
 	local original_name="$1"
 	local normalized_name="${original_name}"
@@ -149,11 +190,6 @@ normalize_dirname() {
 		needs_normalization=true
 	fi
 
-	# 检查是否包含非ASCII字符（中文等）- 使用更可靠的方式检测
-	if [[ "${normalized_name}" == *[![:ascii:]]* ]]; then
-		needs_normalization=true
-	fi
-
 	if [ "${needs_normalization}" = "true" ]; then
 		# 执行标准化
 		# 1. 空格替换为下划线
@@ -173,18 +209,6 @@ normalize_dirname() {
 			normalized_name="_${normalized_name:1}"
 		fi
 
-		# 6. 中文处理：替换为哈希值
-		# 检测非ASCII字符并替换为哈希值
-		if [[ "${normalized_name}" == *[![:ascii:]]* ]]; then
-			# 计算哈希值（使用MD5的前8位）
-			local hash
-			hash=$(echo -n "${normalized_name}" | md5sum | cut -c1-8)
-			# 替换所有非ASCII字符为下划线（使用更兼容的方式）
-			normalized_name=$(echo "${normalized_name}" | sed 's/[^ -~]/_/g')
-			# 在末尾添加哈希值
-			normalized_name="${normalized_name}_${hash}"
-		fi
-
 		# 清理连续下划线
 		normalized_name=$(echo "${normalized_name}" | sed 's/__*/_/g')
 
@@ -197,7 +221,7 @@ normalize_dirname() {
 	echo "${normalized_name}"
 }
 
-# 标准化文件名（与目录名使用相同的逻辑）
+# 标准化文件名（与目录名使用相同的逻辑；非 ASCII 字符原样保留）
 normalize_filename() {
 	local original_name="$1"
 	local normalized_name="${original_name}"
@@ -230,11 +254,6 @@ normalize_filename() {
 		needs_normalization=true
 	fi
 
-	# 检查是否包含非ASCII字符（中文等）
-	if [[ "${normalized_name}" == *[![:ascii:]]* ]]; then
-		needs_normalization=true
-	fi
-
 	if [ "${needs_normalization}" = "true" ]; then
 		# 执行标准化
 		# 1. 空格替换为下划线
@@ -252,17 +271,6 @@ normalize_filename() {
 		# 5. 连字符处理：文件名以 - 开头时替换为 _
 		if [[ "${normalized_name}" =~ ^- ]]; then
 			normalized_name="_${normalized_name:1}"
-		fi
-
-		# 6. 中文处理：替换为哈希值
-		if [[ "${normalized_name}" == *[![:ascii:]]* ]]; then
-			# 计算哈希值（使用MD5的前8位）
-			local hash
-			hash=$(echo -n "${normalized_name}" | md5sum | cut -c1-8)
-			# 替换所有非ASCII字符为下划线
-			normalized_name=$(echo "${normalized_name}" | sed 's/[^ -~]/_/g')
-			# 在末尾添加哈希值
-			normalized_name="${normalized_name}_${hash}"
 		fi
 
 		# 清理连续下划线
@@ -438,7 +446,7 @@ detect_linyaps_app_structure() {
 
 # 在任意 base_dir 下处理 linyaps 格式的 <app_id>/ 目录
 # 将 files/ 内容直接平铺到 DEST_DIR（等同于 /usr/ 处理）
-# 跳过 entries/ 子目录（由 files_res/ 管线处理）
+# 将 entries/ 内容平铺到 DEST_DIR/share（entries/ 等同于 /usr/share/）
 process_linyaps_app_structure_at() {
 	local base_dir="$1"
 	local app_id="$2"
@@ -458,9 +466,11 @@ process_linyaps_app_structure_at() {
 		log_info "  未找到 files/ 子目录，跳过"
 	fi
 
-	# 跳过 entries/ 子目录（由 pak_linyaps.sh 的 files_res/ 管线处理）
+	# 将 entries/ 内容平铺到 DEST_DIR/share（entries/ 等同于 /usr/share/）
 	if [ -d "${app_base_dir}/entries" ]; then
-		log_info "  跳过 entries/ 子目录（由 files_res/ 管线处理）"
+		log_success "  处理 entries/ 目录（平铺到 binary/share/）..."
+		copy_dir_with_normalization "${app_base_dir}/entries" "${DEST_DIR}/share"
+		log_success "  entries/ 处理完成"
 	fi
 
 	# 处理其他顶层项（如有）
@@ -468,7 +478,7 @@ process_linyaps_app_structure_at() {
 		if [ -e "${item}" ] || [ -L "${item}" ]; then
 			local item_name=$(basename "${item}")
 			case "${item_name}" in
-			files | entries)
+			files)
 				continue
 				;;
 			*)
@@ -1188,9 +1198,151 @@ strip_wrapper_directory() {
 	fi
 }
 
+# ============================================================
+# 阶段 2: libfix - 在 binary/lib/ 下补全 .so 软链
+# 为所有非标准目录及多架构子目录（如 aarch64-linux-gnu/）的 ELF 共享库
+# 创建相对路径软链，并补全 SONAME 级软链（如 libtiff.so.5）
+# 保证动态链接器在 $PREFIX/lib 下能找到库的 SONAME
+# ============================================================
+
+# 为一个真实共享库在 lib/ 根目录补全缺失的软链链
+# 参数: 真实库的绝对路径
+# 生成: libfoo.so.A（SONAME，若有版本）与 libfoo.so（基名，若缺失）
+create_lib_chain() {
+	local real_path="$1"
+	local base
+	base=$(basename "${real_path}")
+
+	# 提取库主干名与版本号: libfoo.so.A.B.C -> stem=libfoo, ver=.A.B.C
+	local stem="${base%%.so*}"
+	local ver="${base#${stem}.so}"
+
+	local soname="${stem}.so"
+	if [[ "${ver}" =~ ^\.([0-9]+) ]]; then
+		soname="${stem}.so.${BASH_REMATCH[1]}"
+	fi
+
+	local rel
+	rel=$(realpath --relative-to="${lib_dir}" "${real_path}")
+
+	# 1. SONAME 软链（libfoo.so.A），缺失时创建
+	if [ "${soname}" != "${stem}.so" ]; then
+		if [ ! -e "${lib_dir}/${soname}" ] && [ ! -L "${lib_dir}/${soname}" ]; then
+			ln -sf "${rel}" "${lib_dir}/${soname}"
+			echo "创建SONAME软链: ${lib_dir}/${soname} -> ${rel}"
+		fi
+	fi
+
+	# 2. 基名软链（libfoo.so），缺失时创建，优先指向 SONAME
+	local unversioned="${stem}.so"
+	if [ ! -e "${lib_dir}/${unversioned}" ] && [ ! -L "${lib_dir}/${unversioned}" ]; then
+		local target_for_base="${rel}"
+		if [ "${soname}" != "${unversioned}" ] && [ -e "${lib_dir}/${soname}" ]; then
+			target_for_base="${soname}"
+		fi
+		ln -sf "${target_for_base}" "${lib_dir}/${unversioned}"
+		echo "创建基名软链: ${lib_dir}/${unversioned} -> ${target_for_base}"
+	fi
+}
+
+# 修复非标准目录及多架构子目录的 .so 软链接
+# 在 binary/lib/ 下为所有非标准目录的 ELF 共享库创建相对路径软链接
+fix_lib_symlinks() {
+	log_info "修复非标准目录 .so 软链（含多架构子目录与 SONAME 补全）..."
+
+	lib_dir="${DEST_DIR}/lib"
+	mkdir -p "${lib_dir}"
+
+	tmpfile=$(mktemp)
+	trap 'rm -f "${tmpfile}"' EXIT
+
+	# 第一遍：收集所有非标准目录（非 lib/ 本身，含 lib/ 下多架构子目录）的 ELF 共享库
+	# 注意：不能排除 lib/*（多架构子目录），否则 aarch64-linux-gnu/ 下库的 SONAME 无法提升
+	find "${DEST_DIR}" \( -type f -o -type l \) -name "*.so*" \
+		! -path "${lib_dir}/*" -print0 2>/dev/null >"${tmpfile}"
+
+	while IFS= read -r -d '' entry; do
+		real_path=$(readlink -f "${entry}" 2>/dev/null || true)
+		if [ -z "${real_path}" ] || [ ! -f "${real_path}" ]; then
+			continue
+		fi
+
+		file_type=$(file -b "${real_path}" 2>/dev/null || true)
+		if ! echo "${file_type}" | grep -q "ELF.*shared object"; then
+			continue
+		fi
+
+		lib_name=$(basename "${real_path}")
+		if [ -z "${lib_name}" ]; then
+			continue
+		fi
+
+		symlink_path="${lib_dir}/${lib_name}"
+		if [ -e "${symlink_path}" ] || [ -L "${symlink_path}" ]; then
+			existing_target=$(readlink -f "${symlink_path}" 2>/dev/null || true)
+			if [ "${existing_target}" = "${real_path}" ]; then
+				continue
+			fi
+		fi
+
+		target_rel_path=$(realpath --relative-to="${lib_dir}" "${real_path}")
+		ln -sf "${target_rel_path}" "${symlink_path}"
+		echo "创建软链: ${symlink_path} -> ${target_rel_path}"
+	done <"${tmpfile}"
+
+	# 第二遍：为所有真实共享库在 lib/ 根补齐 SONAME 与基名软链
+	# 覆盖来源：
+	#   A. lib/ 根下已存在的 *.so*（解析到 lib 外的真实库）
+	#   B. lib/ 下多架构子目录中的真实库（如 aarch64-linux-gnu/*.so）
+	#   C. 多架构子目录中的版本化软链（如 aarch64-linux-gnu/libtiff.so.5）
+	declare -A seen_libs
+	shopt -s nullglob
+
+	collect_and_create_chain() {
+		local p="$1"
+		local rp
+		rp=$(readlink -f "${p}" 2>/dev/null || true)
+		if [ -z "${rp}" ] || [ ! -f "${rp}" ]; then
+			return
+		fi
+		local ft
+		ft=$(file -b "${rp}" 2>/dev/null || true)
+		if ! echo "${ft}" | grep -q "ELF.*shared object"; then
+			return
+		fi
+		if [ -n "${seen_libs[${rp}]+x}" ]; then
+			return
+		fi
+		seen_libs["${rp}"]=1
+		create_lib_chain "${rp}"
+	}
+
+	# 来源 A + C：lib/ 根与多架构子目录下的所有 *.so* 条目（文件与软链）
+	while IFS= read -r -d '' p; do
+		collect_and_create_chain "${p}"
+	done < <(find "${lib_dir}" -maxdepth 2 -name "*.so*" -print0 2>/dev/null)
+
+	# 来源 B（兜底）：lib/ 下所有深度真实 ELF 文件
+	while IFS= read -r -d '' p; do
+		collect_and_create_chain "${p}"
+	done < <(find "${lib_dir}" -type f -name "*.so*" -print0 2>/dev/null)
+
+	log_info "  lib/ 下 .so 软链修复完成"
+}
+
 # 主函数
 main() {
 	parse_args "$@"
+
+	if [ "${PHASE}" = "libfix" ]; then
+		log_info "========================================="
+		log_info "  .so 软链修复阶段 (libfix)"
+		log_info "========================================="
+		log_info "目标目录(binary): ${DEST_DIR}"
+		fix_lib_symlinks
+		log_success ".so 软链修复完成: ${DEST_DIR}/lib/"
+		return 0
+	fi
 
 	log_info "========================================="
 	log_info "  特殊格式路径处理脚本"

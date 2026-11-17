@@ -310,15 +310,19 @@ create_project_structure() {
     mkdir -p "${project_dir}/scripts"
     mkdir -p "${project_dir}/config"
 
-    # 拷贝辅助脚本
-    if [[ -f "${WORKSPACE_ROOT}/skills/bin2linyaps.deb.project-gen/scripts/handle_special_paths.sh" ]]; then
-        cp "${WORKSPACE_ROOT}/skills/bin2linyaps.deb.project-gen/scripts/handle_special_paths.sh" "${project_dir}/scripts/"
-        chmod +x "${project_dir}/scripts/handle_special_paths.sh"
-    fi
-    if [[ -f "${WORKSPACE_ROOT}/skills/bin2linyaps.deb.project-gen/scripts/download_missing_deps.sh" ]]; then
-        cp "${WORKSPACE_ROOT}/skills/bin2linyaps.deb.project-gen/scripts/download_missing_deps.sh" "${project_dir}/scripts/"
-        chmod +x "${project_dir}/scripts/download_missing_deps.sh"
-    fi
+    # 拷贝辅助脚本（规范源位于 skills/bin2linyaps.deb.project-gen/scripts/）
+    # pak_linyaps.sh 引用的全部可部署脚本在此统一复制，避免缺失导致构建失败
+    local deployable_scripts=(
+        "handle_special_paths.sh" "dedup_desktop_files.sh"
+        "validate_bin_nesting.sh" "analyze_entry_script.sh"
+        "download_missing_deps.sh"
+    )
+    for s in "${deployable_scripts[@]}"; do
+        if [[ -f "${WORKSPACE_ROOT}/skills/bin2linyaps.deb.project-gen/scripts/${s}" ]]; then
+            cp "${WORKSPACE_ROOT}/skills/bin2linyaps.deb.project-gen/scripts/${s}" "${project_dir}/scripts/"
+            chmod +x "${project_dir}/scripts/${s}"
+        fi
+    done
 
     # 拷贝白名单配置文件
     if [[ -f "${WORKSPACE_ROOT}/skills/config/base_runtime_whitelist.conf" ]]; then
@@ -388,6 +392,10 @@ generate_pak_linyaps() {
     # 拷贝模板脚本
     cp "$template_file" "$output_file"
     chmod +x "$output_file"
+
+    # 写入 ll_id（新版本 pak_linyaps 通过变量生成 linglong.yaml 的 id）
+    # 将模板中的 ll_id="" 替换为实际包名，避免构建时因 ll_id 为空而失败
+    sed -i 's/^[[:space:]]*ll_id=""/ll_id="'"${pkg_name}"'"/' "$output_file"
 
     log_info "已生成: $output_file"
 }

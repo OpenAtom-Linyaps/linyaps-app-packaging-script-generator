@@ -1,7 +1,7 @@
 version: "${ll_version}"
 
 package:
-  id: ${package_id}
+  id: ${ll_id}
   name: "${app_name}"
   version: ${ll_version}
   kind: app

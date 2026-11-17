@@ -194,13 +194,14 @@ step2_validate_structure() {
 }
 
 step3_build_test() {
-    local project_dir="$1"
-    local arch="$2"
-    local orig_version="$3"
-    local src_path="$4"
-    local output_dir="$5"
-    local build_tmp_dir="$6"
-    local log_file="$7"
+    local pkg_name="$1"
+    local project_dir="$2"
+    local arch="$3"
+    local orig_version="$4"
+    local src_path="$5"
+    local output_dir="$6"
+    local build_tmp_dir="$7"
+    local log_file="$8"
 
     mkdir -p "$(dirname "$log_file")"
 
@@ -225,6 +226,7 @@ step3_build_test() {
     start_time=$(date +%s)
 
     if (cd "$project_dir" && bash ./pak_linyaps.sh \
+        --ll_id="${pkg_name}" \
         --linyaps_arch="${arch}" \
         --origin_version="${orig_version}" \
         --src_path="${src_path}" \
@@ -433,7 +435,7 @@ run_task() {
     # ========== 步骤3: 构建测试 ==========
     log_info "--- 步骤3/5: 构建测试 ---"
     local build_result
-    build_result=$(step3_build_test "$project_dir" "$arch" "$orig_version" "$src_path" "$OUTPUT_DIR" "$BUILD_TMP_DIR" "$task_reports_dir/build.log") || true
+    build_result=$(step3_build_test "$pkg_name" "$project_dir" "$arch" "$orig_version" "$src_path" "$OUTPUT_DIR" "$BUILD_TMP_DIR" "$task_reports_dir/build.log") || true
     build_result="${build_result:-{\"step\":\"build_test\",\"status\":\"failed\",\"error\":\"step3 exception\"}}"
 
     # ========== 步骤3b: 生成构建元数据 ==========

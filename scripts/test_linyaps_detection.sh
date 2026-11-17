@@ -7,7 +7,7 @@ set -e
 
 PROJECT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 DEB_FILE="${PROJECT_ROOT}/examples/com.zjd.gov_2.31.0.4_amd64.deb"
-HANDLE_SCRIPT="${PROJECT_ROOT}/skills/bin2linyaps.deb.project-gen/templates/scripts/handle_special_paths.sh"
+HANDLE_SCRIPT="${PROJECT_ROOT}/skills/bin2linyaps.deb.project-gen/scripts/handle_special_paths.sh"
 CACHE_DIR="${PROJECT_ROOT}/.cache/test_linyaps"
 EXTRACT_DIR="${CACHE_DIR}/extracted"
 OUTPUT_DIR="${CACHE_DIR}/output"
@@ -88,7 +88,7 @@ echo "  提取目录结构:"
 ls -la "${EXTRACT_DIR}/" 2>/dev/null | head -5
 echo ""
 
-bash "${HANDLE_SCRIPT}" "${EXTRACT_DIR}" "${OUTPUT_DIR}" --verbose 2>&1
+bash "${HANDLE_SCRIPT}" --phase=paths "${EXTRACT_DIR}" "${OUTPUT_DIR}" --verbose 2>&1
 echo ""
 
 # 步骤 4: 验证结果

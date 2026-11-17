@@ -43,8 +43,7 @@ CI_ll_app.netlify.ytdn
 ├── scripts
 │   ├── dedup_desktop_files.sh
 │   ├── handle_special_paths.sh
-│   ├── validate_bin_nesting.sh
-│   └── fix_nonstd_lib_symlinks.sh
+│   └── validate_bin_nesting.sh
 └── templates
     ├── files_res
     │   └── share

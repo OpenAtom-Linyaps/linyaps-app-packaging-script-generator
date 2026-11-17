@@ -49,7 +49,8 @@ JSON 結構分為 `main`（必填）和 `optional`（可選）兩個分組：
     "runtime_id": "org.deepin.runtime.dtk",
     "runtime_version": "25.2.2",
     "linyaps_arch": "x86_64",
-    "output_dir": "./output"
+    "output_dir": "./output",
+    "build_extra_args": "--skip-output-check --skip-strip-symbols"
   }
 }
 ```
@@ -71,10 +72,12 @@ JSON 結構分為 `main`（必填）和 `optional`（可選）兩個分組：
 | `app_version` | 版本號 | ❌ | `1.0.0` |
 | `base_id` | base 層 ID | ❌ | `org.deepin.base` |
 | `base_version` | base 層版本 | ❌ | `25.2.2` |
-| `runtime_id` | runtime 層 ID | ❌ | `org.deepin.runtime.dtk` |
+| `runtime_id` | runtime 層 ID，傳空值 `--runtime_id=` 或 `--runtime_id=-` 可禁用 runtime（純 base 應用，禁用後 linglong.yaml 的 `runtime:` 字段會被刪除） | ❌ | `org.deepin.runtime.dtk` |
 | `runtime_version` | runtime 層版本 | ❌ | `25.2.2` |
 | `linyaps_arch` | 目標架構 | ❌ | `x86_64` |
 | `output_dir` | 輸出目錄 | ❌ | `./output` |
+| `build_extra_args` | 額外構建參數，原樣追加到 `ll-builder build`（默認 `--skip-output-check`，覆寫時需自行包含） | ❌ | `--skip-output-check --skip-strip-symbols` |
+| `nested_script` | 嵌套腳本文件名（僅填文件名，路徑自動拼接為 `${project_root}/<文件名>`），空值關閉。開啟後 command 與 desktop Exec 指向嵌套腳本 | ❌ | `my_launcher.sh` |
 
 ## 批量初始化
 
@@ -295,7 +298,19 @@ cp "${skill_root}/templates/pak_linyaps.sh" "${project_dir}/"
 chmod +x "${project_dir}/pak_linyaps.sh"
 cp "${skill_root}/templates/linglong.yaml" "${project_dir}/templates/"
 
+# ⚠️ 写入 ll_id：将模板默认的 ll_id="" 替换为实际包名（新版本 pak_linyaps 通过该变量 envsubst 生成 linglong.yaml 的 id）
+sed -i 's/^[[:space:]]*ll_id=""/ll_id="'"${package_id}"'"/' "${project_dir}/pak_linyaps.sh"
+
+# ⚠️ 写入 binary_name（仅当已解析到非空值时）：
+#    通过 sed 精确替换 init_global_data() 内唯一的 binary_name="" 声明行。
+#    该声明位于 CLI 解析循环之前，运行时 --binary_name 参数仍可覆盖它。
+#    binary_name 为空时保持模板默认 binary_name=""（wrapper 逻辑将回退自动偵測，属预期行为）。
+if [ -n "${binary_name}" ]; then
+	sed -i 's|^[[:space:]]*binary_name=""|binary_name="'"${binary_name}"'"|' "${project_dir}/pak_linyaps.sh"
+fi
+
 # 預填充已知值到模板 YAML（Step 3 已收集的靜態信息，避免佔位符殘留）
+# 注意：package.id 必须保持为 ${ll_id} 变量（由 pak_linyaps envsubst 替换），不要 sed 替换 ${ll_id}
 sed -i "s|\${package_id}|${package_id}|g" "${project_dir}/templates/linglong.yaml"
 sed -i "s|\${app_name}|${app_name}|g" "${project_dir}/templates/linglong.yaml"
 sed -i "s|\${description}|${description}|g" "${project_dir}/templates/linglong.yaml"
@@ -310,8 +325,8 @@ chmod +x "${project_dir}/scripts/download_missing_deps.sh"
 cp "${skill_root}/scripts/analyze_entry_script.sh" "${project_dir}/scripts/"
 chmod +x "${project_dir}/scripts/analyze_entry_script.sh"
 
-# 拷貝路徑處理腳本（與 deb 版共用，處理 /usr/、/opt/ 等路徑轉換 + 特殊字符標準化）
-cp "${skill_root}/../bin2linyaps.deb.project-gen/templates/scripts/handle_special_paths.sh" "${project_dir}/scripts/"
+# 拷貝路徑處理綜合腳本（雙模式：--phase=paths 路徑轉換 + --phase=libfix .so 軟鏈修復）
+cp "${skill_root}/scripts/handle_special_paths.sh" "${project_dir}/scripts/"
 chmod +x "${project_dir}/scripts/handle_special_paths.sh"
 
 # 拷貝白名單配置
@@ -331,6 +346,7 @@ fi
 - `package_id` 從 `app_name` 推導（反向域名格式，如 `com.example.app`）
 - `command` 欄位占位符由 `pak_linyaps.sh` 在構建時自動處理
 - `base`/`runtime` 欄位為空佔位符 `""`，由 `build_pak()` 透過 `sed` 延遲注入
+- **🚫 禁止在 pak_linyaps.sh 顶部另插 binary_name=... 声明**：`binary_name` 必须通过上述 sed 精确替换 `init_global_data()` 内唯一的 `binary_name=""` 声明行。若在脚本顶部（`srcType`/`templateVer` 之后）再插一行 `binary_name=...`，会与模板默认值形成双重声明，后执行的默认值会覆盖注入值，导致 binary_name 为空、wrapper 逻辑误回退自动偵測（不符合 binary_name 定制预期）。
 - **禁止**在資源收集階段手動修改 desktop 文件的 `Exec=` 欄位
 - **輸出**：`source_package_detected` 標記（`true`/`false`），若為 `true` 則額外輸出 `source_file_type` 欄位標示檢測到的源碼文件類型
 
@@ -352,7 +368,7 @@ fi
 | 構建時 | pak_linyaps.sh | 更新 desktop 的 Exec（替換為 wrapper 絕對路徑） |
 | 構建時 | pak_linyaps.sh | Desktop 文件去重（dedup_desktop_files.sh 兩步去重） |
 | 構建時 | pak_linyaps.sh | 嵌套 bin/ 路徑驗證（validate_bin_nesting.sh） |
-| 構建時 | pak_linyaps.sh | 非標準目錄 .so 軟鏈修復（fix_nonstd_lib_symlinks.sh） |
+| 構建時 | pak_linyaps.sh | 非標準目錄 .so 軟鏈修復（handle_special_paths.sh --phase=libfix，含 SONAME 補全） |
 | 構建時 | pak_linyaps.sh | **ll-builder build** — 實際構建玲瓏包 |
 | 構建時 | pak_linyaps.sh | **ll-builder export** — 導出 .layer 文件到 output_dir |
 | 構建時 | pak_linyaps.sh | 可選 ll-builder push（auto_push=true 時） |
@@ -375,16 +391,16 @@ main()
   │   └─ envsubst 生成 linglong.yaml
   ├─ build_pak()               # 核心構建
   │   ├─ tar -xf 解壓
-  │   ├─ handle_special_paths.sh 路徑轉換
+  │   ├─ handle_special_paths.sh --phase=paths 路徑轉換
   │   ├─ 自動偵測 binary_name（desktop → scan_executables.sh）
   │   ├─ 入口腳本風險檢測（analyze_entry_script.sh）
   │   ├─ 創建 wrapper 腳本（binary/bin/*.wrapper）
   │   ├─ 更新 linglong.yaml command + base/runtime + desktop Exec
   │   ├─ dedup_desktop_files.sh 兩步去重
   │   ├─ validate_bin_nesting.sh 嵌套 bin/ 驗證
-  │   ├─ fix_nonstd_lib_symlinks.sh 非標準 .so 軟鏈修復
+  │   ├─ handle_special_paths.sh --phase=libfix 非標準 .so 軟鏈修復（含 SONAME 補全）
   │   ├─ 創建 .linyaps_genius 標識文件
-  │   ├─ ll-builder build --skip-output-check
+  │   ├─ ll-builder build ${build_extra_args}   # 默認 --skip-output-check，可用 --build_extra_args 覆寫
   │   ├─ ll-builder export --no-develop --layer
   │   └─ 移動 *.layer 到 output_dir
   ├─ push_dev() [可選]         # ll-builder push 到倉庫
@@ -405,6 +421,41 @@ build: |
   cp -rf /project/files_res/* ${prefix}/
   touch ${prefix}/.linyaps_genius
 ```
+
+---
+
+## 嵌套腳本支持（Nested Script）
+
+某些 tar 二進制應用需要以"嵌套腳本"方式啟動：最終入口不是 wrapper，而是用戶提供的嵌套 bash 腳本，腳本內通過約定變量 `${wrapper}` 代指 pak_linyaps 自動解析出的 wrapper，形成 `command/desktop → 嵌套腳本 → wrapper → 實際二進制` 的啟動鏈。
+
+### 使用方式
+
+- 將嵌套腳本放置於工程根目錄（與 `pak_linyaps.sh` 同級），腳本內使用 `${wrapper}` 代指 wrapper。
+- 開啟開關（僅填文件名，路徑自動拼接為 `${project_root}/<文件名>`）：
+
+```bash
+./pak_linyaps.sh ... --nested_script=my_launcher.sh
+```
+
+### 嵌套腳本示例
+
+```bash
+#!/bin/bash
+# my_launcher.sh - 由用戶提供，放在工程根目錄
+script_dir="$(cd "$(dirname "$0")" && pwd)"
+exec "${script_dir}/${wrapper}" "$@"
+```
+
+構建後 `${wrapper}` 會被替換為同目錄 wrapper 文件名（tar 為 `${binary_name}.wrapper`），並複製到 `${prefix}/bin/` 且賦予執行權限；linglong.yaml 的 `command` 與 desktop 的 `Exec=` 均指向該嵌套腳本。
+
+### 回退策略
+
+以下情況會告警並回退到原 wrapper（`command`/`Exec=` 仍指向 wrapper）：
+
+1. 嵌套腳本文件不存在。
+2. 腳本內未找到 `${wrapper}` 變量。
+
+開關未指定（`nested_script` 為空）時，行為完全不變。
 
 ---
 
@@ -448,10 +499,10 @@ build: |
 ### 構建腳本（scripts/）
 - `parse_build_config.sh`：JSON 配置解析腳本（解析 `build_config.json`，驗證必填欄位，輸出 `key=value` 格式）
 - `scan_executables.sh`：可執行檔掃描腳本（tar 版特有，用於無 desktop 時的自動偵測）
-- `handle_special_paths.sh`：路徑轉換腳本（處理 `/usr/`、`/opt/` 等路徑層級剝離 + 特殊字符標準化 + 軟鏈修復），與 deb 版共用
-- `dedup_desktop_files.sh`：Desktop 文件去重腳本（兩步去重：binary vs files_res + files_res 內部），與 deb 版共用
+- `handle_special_paths.sh`：雙模式綜合腳本（`--phase=paths` 路徑轉換：處理 `/usr/`、`/opt/` 等路徑層級剝離 + 特殊字符標準化 + 軟鏈修復；`--phase=libfix` 非標準 .so 軟鏈修復），與 deb 版共用
+- `dedup_desktop_files.sh`：Desktop 文件去重腳本（兩步去重：binary vs files_res + files_res 內部；完整 Exec 值精確匹配，跨目錄時 files_res/ 權威並做 exec 存在性回退，`NoDisplay=true` 始終保留），與 deb 版共用
 - `validate_bin_nesting.sh`：嵌套 bin/ 路徑驗證腳本，與 deb 版共用
-- `fix_nonstd_lib_symlinks.sh`：非標準目錄 .so 軟鏈修復腳本，在 `lib/` 下為非標準目錄的 ELF 共享庫創建相對路徑軟鏈接
+- `handle_special_paths.sh`（`--phase=libfix`）：非標準目錄及多架構子目錄 .so 軟鏈修復腳本，在 `lib/` 下為 ELF 共享庫創建相對路徑軟鏈接，並補全 SONAME 級軟鏈（如 `libtiff.so.5`）；原 `fix_nonstd_lib_symlinks.sh` 已合併進本階段
 
 ### 外部工具
 - `jq`：JSON 解析工具（`parse_build_config.sh` 依賴）
