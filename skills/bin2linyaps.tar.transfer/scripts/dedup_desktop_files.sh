@@ -7,7 +7,8 @@
 # 2. 提取每个文件的 Exec 命令（完整 Exec 值，仅 trim 首尾空白）
 # 3. 按 Exec 命令分组，相同命令的文件只保留一份
 # 4. 支持跨目录去重（依据参考目录 files_res/ 的 desktop 判定）
-# 5. 删除重复文件，输出去重报告
+# 5. 跨目录去重删除前，合并 binary/ desktop 缺失字段到 files_res/（本地化 Name/Comment 等）
+# 6. 删除重复文件，输出去重报告
 #
 # 去重策略：
 # - 目录内去重基于「完整 Exec 值」进行去重（非文件内容哈希）
@@ -15,12 +16,11 @@
 #   - Exec=/usr/bin/app 与 Exec=app 视为不同（保守不去重）
 #   - 例如：Exec=/usr/bin/app %F 和 Exec=/usr/bin/app %U 保留两份
 # - 跨目录去重（--reference-dir，target=binary, reference=files_res）：
-#   - files_res/ 无可见 desktop → 跳过跨目录去重，保留 binary/ 的 desktop
-#   - files_res/ 有可见 desktop 且其 exec binary 存在于 binary/ 或 files_res/
-#       → files_res/ 权威，删除 binary/ 全部非 NoDisplay=true 的 desktop
-#   - files_res/ 有可见 desktop 但 exec binary 两目录均缺失
-#       → 回退：保留 binary/ 的 desktop（不删除），采用 binary/ 的 Exec
-# - 包含 NoDisplay=true 的 desktop 文件不参与去重（如 URL handler 等隐藏条目），始终保留
+#   - 删除 binary/ 重复 desktop 前，先将 binary/ 中 files_res/ 缺失的字段（本地化 Name/Comment、
+#     Comment、GenericName、Categories、MimeType、Keywords 等）合并到 files_res/ 文件
+#   - files_res/ 已有的字段值保留不变（模板权威），仅追加 files_res/ 缺失的 key
+#   - [Desktop Action] 段：files_res/ 缺少的整段追加；已有段内逐字段比较补充缺失 key
+# - NoDisplay=true 的 desktop 文件参与自身组的去重（与非 NoDisplay 文件分属不同组，互不比较）
 #
 # 用法：
 #   dedup_desktop_files.sh <target_dir> [--verbose]
@@ -55,6 +55,7 @@ STAT_TOTAL_FILES=0
 STAT_UNIQUE_FILES=0
 STAT_DUPLICATE_FILES=0
 STAT_SKIPPED_FILES=0
+STAT_MERGED_FIELDS=0
 
 # 日志函数
 log_info() {
@@ -136,7 +137,7 @@ parse_args() {
 }
 
 # 检查 desktop 文件是否设置了 NoDisplay=true
-# NoDisplay=true 的文件是隐藏条目，不参与去重
+# NoDisplay=true 文件参与自身组的去重（与非 NoDisplay 文件分属不同组）
 is_nodisplay() {
 	local desktop_file="$1"
 	local nodisplay_line
@@ -199,6 +200,167 @@ get_exec_binary_name() {
 	basename "${first_token}"
 }
 
+# 字段合并函数：将 binary/ desktop 的缺失字段合并到 files_res/ desktop
+# 规则：target 已有的 key 保留（模板权威），仅追加 target 缺失的 key
+# 本地化字段（Name[locale]、Comment[locale] 等）按 key（含 locale）逐个比较，不冲突
+# [Desktop Action] 段：target 缺少的整段追加；已有段内逐字段比较补充缺失 key 到段末尾
+merge_desktop_fields() {
+	local source_desktop="$1" # binary/ 文件（即将被删除）
+	local target_desktop="$2" # files_res/ 文件（保留）
+
+	# 1. 读取 target 文件到数组，并记录每个 section 的行号范围（1-based 闭区间）
+	local -a target_lines=()
+	local -A section_ranges=() # "[Desktop Entry]" -> "start:end"
+	local -A target_keys=()    # "[Desktop Entry]|Name" -> 1
+	local current_section="[Desktop Entry]"
+	local section_start=1
+	local line_num=0
+
+	while IFS= read -r line || [ -n "${line}" ]; do
+		line_num=$((line_num + 1))
+		target_lines+=("${line}")
+		case "${line}" in
+		\[*\])
+			if [ ${line_num} -gt 1 ]; then
+				section_ranges["${current_section}"]="${section_start}:$((line_num - 1))"
+			fi
+			current_section="${line}"
+			section_start=${line_num}
+			;;
+		*=*)
+			target_keys["${current_section}|${line%%=*}"]=1
+			;;
+		esac
+	done <"${target_desktop}"
+	section_ranges["${current_section}"]="${section_start}:${line_num}"
+
+	# 2. 遍历 source，收集缺失字段和缺失整段
+	#    missing_in_section["[Desktop Entry]"]="line1\nline2"  — 已有 section 中缺失的字段
+	#    missing_section_lines:  数组，每个元素是一个完整缺失 section 的所有行（$'\n' 分隔）
+	local -A missing_in_section=()
+	local -a missing_section_lines=()
+	local -a cur_missing_section=()
+	local in_missing_section=false
+	current_section="[Desktop Entry]"
+
+	while IFS= read -r line || [ -n "${line}" ]; do
+		case "${line}" in
+		\[*\])
+			# 关闭上一个 missing section
+			if [ "${in_missing_section}" = true ]; then
+				missing_section_lines+=("$(printf '%s\n' "${cur_missing_section[@]}")")
+				cur_missing_section=()
+				in_missing_section=false
+			fi
+			current_section="${line}"
+			if [ -z "${section_ranges["${current_section}"]+x}" ]; then
+				in_missing_section=true
+				cur_missing_section=("${line}")
+			fi
+			;;
+		*=*)
+			if [ "${in_missing_section}" = true ]; then
+				cur_missing_section+=("${line}")
+			else
+				local key="${line%%=*}"
+				local full_key="${current_section}|${key}"
+				if [ -z "${target_keys["${full_key}"]+x}" ]; then
+					local prev="${missing_in_section["${current_section}"]}"
+					if [ -n "${prev}" ]; then
+						missing_in_section["${current_section}"]="${prev}"$'\n'"${line}"
+					else
+						missing_in_section["${current_section}"]="${line}"
+					fi
+				fi
+			fi
+			;;
+		"")
+			if [ "${in_missing_section}" = true ]; then
+				cur_missing_section+=("${line}")
+			fi
+			;;
+		*)
+			# 注释行：仅当在 missing section 内时保留
+			if [ "${in_missing_section}" = true ]; then
+				cur_missing_section+=("${line}")
+			fi
+			;;
+		esac
+	done <"${source_desktop}"
+	if [ "${in_missing_section}" = true ]; then
+		missing_section_lines+=("$(printf '%s\n' "${cur_missing_section[@]}")")
+	fi
+
+	# 3. 计算总追加行数
+	local total_to_append=0
+	local sec
+	for sec in "${!missing_in_section[@]}"; do
+		total_to_append=$((total_to_append + $(printf '%s\n' "${missing_in_section["${sec}"]}" | wc -l)))
+	done
+	local msl
+	for msl in "${missing_section_lines[@]}"; do
+		total_to_append=$((total_to_append + $(printf '%s\n' "${msl}" | wc -l)))
+	done
+
+	if [ ${total_to_append} -eq 0 ]; then
+		return 0
+	fi
+
+	# 4. 重建 target 文件
+	#    a) 已有 section：在 section 末尾插入缺失字段
+	#    b) 缺失 section：整段追加到文件末尾
+	local -a new_lines=()
+	current_section="[Desktop Entry]"
+	local i
+	for i in "${!target_lines[@]}"; do
+		local tline="${target_lines[$i]}"
+		new_lines+=("${tline}")
+
+		case "${tline}" in
+		\[*\]) current_section="${tline}" ;;
+		esac
+
+		# 到达 section 最后一行时插入缺失字段
+		local range="${section_ranges["${current_section}"]}"
+		local range_end="${range##*:}"
+		if [ "$((i + 1))" = "${range_end}" ]; then
+			local missing="${missing_in_section["${current_section}"]}"
+			if [ -n "${missing}" ]; then
+				while IFS= read -r mline || [ -n "${mline}" ]; do
+					[ -n "${mline}" ] && new_lines+=("${mline}")
+				done <<<"${missing}"
+			fi
+		fi
+	done
+
+	# 4b. 追加 target 没有的完整 section
+	for msl in "${missing_section_lines[@]}"; do
+		# 确保前面有空行分隔
+		if [ ${#new_lines[@]} -gt 0 ] && [ -n "${new_lines[-1]}" ]; then
+			new_lines+=("")
+		fi
+		while IFS= read -r mline || [ -n "${mline}" ]; do
+			new_lines+=("${mline}")
+		done <<<"${msl}"
+		# 去掉 section 末尾的空行（如果有），保持文件整洁
+		while [ ${#new_lines[@]} -gt 0 ] && [ -z "${new_lines[-1]}" ]; do
+			unset 'new_lines[-1]'
+		done
+	done
+
+	# 5. 写回 target 文件
+	local tmp_file
+	tmp_file=$(mktemp)
+	local nl
+	for nl in "${new_lines[@]}"; do
+		printf '%s\n' "${nl}"
+	done >"${tmp_file}"
+	mv "${tmp_file}" "${target_desktop}"
+
+	STAT_MERGED_FIELDS=$((STAT_MERGED_FIELDS + total_to_append))
+	log_info "合并了 ${total_to_append} 个字段: $(basename "${source_desktop}") -> $(basename "${target_desktop}")"
+}
+
 # 去重函数
 dedup_desktop_files() {
 	local apps_dir="${TARGET_DIR}/share/applications"
@@ -230,8 +392,9 @@ dedup_desktop_files() {
 
 	log_info "扫描到 ${STAT_TOTAL_FILES} 个 desktop 文件"
 
-	# 关联数组：Exec 命令 -> 第一个文件路径
-	local -A exec_to_file
+	# 关联数组：Exec 命令 -> 第一个文件路径（按 NoDisplay 分组）
+	local -A exec_to_file_visible
+	local -A exec_to_file_nodisplay
 	# 数组：需要删除的文件
 	local -a files_to_delete
 
@@ -252,32 +415,39 @@ dedup_desktop_files() {
 				readarray -t ref_files_array <<<"${ref_desktop_files}"
 
 				local ref_visible_count=0
+				local ref_nodisplay_count=0
 				local ref_exec_binary=""
+				local -a ref_execs_visible=()
+				local -a ref_execs_nodisplay=()
+				local -A ref_file_visible
+				local -A ref_file_nodisplay
 				for ref_file in "${ref_files_array[@]}"; do
-					# 跳过 NoDisplay=true 的文件
+					local ref_exec
+					ref_exec=$(extract_exec_command "${ref_file}")
 					if is_nodisplay "${ref_file}"; then
-						if [ "${VERBOSE}" = "true" ]; then
-							log_info "  跳过参考文件 (NoDisplay=true): $(basename "${ref_file}")"
-						fi
-						continue
+						ref_nodisplay_count=$((ref_nodisplay_count + 1))
+						ref_execs_nodisplay+=("${ref_exec}")
+						ref_file_nodisplay["${ref_exec}"]="${ref_file}"
+					else
+						ref_visible_count=$((ref_visible_count + 1))
+						ref_execs_visible+=("${ref_exec}")
+						ref_file_visible["${ref_exec}"]="${ref_file}"
 					fi
-					ref_visible_count=$((ref_visible_count + 1))
-					if [ -z "${ref_exec_binary}" ]; then
-						local ref_exec
-						ref_exec=$(extract_exec_command "${ref_file}")
+					# 从第一个 ref 文件提取 ref_exec_binary（任意组），用于 cross_authoritative 校验
+					if [ -z "${ref_exec_binary}" ] && [ -n "${ref_exec}" ]; then
 						ref_exec_binary=$(get_exec_binary_name "${ref_exec}")
 					fi
 				done
 
-				if [ "${ref_visible_count}" -eq 0 ]; then
-					log_info "参考目录中无可用于去重的可见 desktop，跳过跨目录去重"
+				if [ $((ref_visible_count + ref_nodisplay_count)) -eq 0 ]; then
+					log_info "参考目录中无 desktop 文件，跳过跨目录去重"
 				else
-					log_info "参考目录中存在 ${ref_visible_count} 个可见 desktop 文件"
+					log_info "参考目录中存在 ${ref_visible_count} 个可见 + ${ref_nodisplay_count} 个 NoDisplay desktop 文件"
 					cross_dedup_active=true
 
 					# 校验参考 desktop 的 exec binary 是否存在于 binary/ 或 files_res/
 					# 真实布局中 binary 可位于 opt/APP/app、usr/bin/app 等深度路径，故用足够大的 maxdepth
-					if [ -n "${ref_exec_binary}" ] && \
+					if [ -n "${ref_exec_binary}" ] &&
 						find "${TARGET_DIR}" "${REFERENCE_DIR}" -maxdepth 6 -type f -name "${ref_exec_binary}" 2>/dev/null | grep -q .; then
 						log_info "参考 desktop 的 exec binary (${ref_exec_binary}) 存在，files_res/ 作为权威来源"
 						cross_authoritative=true
@@ -295,23 +465,6 @@ dedup_desktop_files() {
 
 	# 遍历所有 desktop 文件
 	for desktop_file in "${files_array[@]}"; do
-		# 跳过 NoDisplay=true 的文件，不参与去重
-		if is_nodisplay "${desktop_file}"; then
-			STAT_SKIPPED_FILES=$((STAT_SKIPPED_FILES + 1))
-			if [ "${VERBOSE}" = "true" ]; then
-				log_info "跳过 (NoDisplay=true): $(basename "${desktop_file}")"
-			fi
-			continue
-		fi
-
-		# files_res/ 权威：删除 binary/ 全部非 NoDisplay desktop
-		if [ "${cross_dedup_active}" = true ] && [ "${cross_authoritative}" = true ]; then
-			files_to_delete+=("${desktop_file}")
-			STAT_DUPLICATE_FILES=$((STAT_DUPLICATE_FILES + 1))
-			log_warning "files_res/ 权威，删除 binary/ 中重复 desktop: $(basename "${desktop_file}")"
-			continue
-		fi
-
 		# 提取 Exec 命令
 		local exec_cmd
 		exec_cmd=$(extract_exec_command "${desktop_file}")
@@ -321,27 +474,64 @@ dedup_desktop_files() {
 			continue
 		fi
 
-		if [ "${VERBOSE}" = "true" ]; then
-			log_info "处理: $(basename "${desktop_file}") -> Exec=${exec_cmd}"
+		# 判断 NoDisplay 状态，选择对应组
+		local is_nd=false
+		if is_nodisplay "${desktop_file}"; then
+			is_nd=true
 		fi
 
-		# 检查是否已存在相同 Exec 命令的文件
-		if [ -z "${exec_to_file[${exec_cmd}]}" ]; then
-			# 首次遇到此 Exec 命令，保留
-			exec_to_file[${exec_cmd}]="${desktop_file}"
-			STAT_UNIQUE_FILES=$((STAT_UNIQUE_FILES + 1))
-			if [ "${VERBOSE}" = "true" ]; then
-				log_info "  保留 (新): $(basename "${desktop_file}")"
-			fi
+		# 选择同组的 ref Exec 数组
+		local -a ref_execs_to_check=()
+		if [ "${is_nd}" = true ]; then
+			ref_execs_to_check=("${ref_execs_nodisplay[@]}")
 		else
-			# 重复文件，记录待删除
+			ref_execs_to_check=("${ref_execs_visible[@]}")
+		fi
+
+		# 跨目录去重：Exec 精确匹配同组 ref
+		if [ "${cross_dedup_active}" = true ] && [ "${cross_authoritative}" = true ]; then
+			local matched=false
+			for ref_exec in "${ref_execs_to_check[@]}"; do
+				if [ "${exec_cmd}" = "${ref_exec}" ]; then
+					matched=true
+					break
+				fi
+			done
+			if [ "${matched}" = true ]; then
+				# 找到匹配的 ref 文件路径，删除前先合并 binary/ 缺失字段到 files_res/
+				local matched_ref_file=""
+				if [ "${is_nd}" = true ]; then
+					matched_ref_file="${ref_file_nodisplay["${exec_cmd}"]}"
+				else
+					matched_ref_file="${ref_file_visible["${exec_cmd}"]}"
+				fi
+				if [ -n "${matched_ref_file}" ] && [ -f "${matched_ref_file}" ]; then
+					merge_desktop_fields "${desktop_file}" "${matched_ref_file}"
+				fi
+				files_to_delete+=("${desktop_file}")
+				STAT_DUPLICATE_FILES=$((STAT_DUPLICATE_FILES + 1))
+				log_warning "files_res/ 权威，删除 binary/ 中重复 desktop (Exec 匹配): $(basename "${desktop_file}")"
+				continue
+			fi
+		fi
+
+		# 目录内去重：按 NoDisplay 组选择映射
+		local current_map
+		if [ "${is_nd}" = true ]; then
+			current_map="exec_to_file_nodisplay"
+		else
+			current_map="exec_to_file_visible"
+		fi
+
+		local existing_file
+		existing_file=$(eval echo "\"\${${current_map}[\"\${exec_cmd}\"]}\"" 2>/dev/null)
+		if [ -z "${existing_file}" ]; then
+			eval "${current_map}[\"\${exec_cmd}\"]=\"\${desktop_file}\""
+			STAT_UNIQUE_FILES=$((STAT_UNIQUE_FILES + 1))
+		else
 			files_to_delete+=("${desktop_file}")
 			STAT_DUPLICATE_FILES=$((STAT_DUPLICATE_FILES + 1))
-			local existing_file="${exec_to_file[${exec_cmd}]}"
 			log_warning "发现重复 Exec 命令: $(basename "${desktop_file}") 与 $(basename "${existing_file}") 相同 (${exec_cmd})"
-			if [ "${VERBOSE}" = "true" ]; then
-				log_info "  将删除: $(basename "${desktop_file}")"
-			fi
 		fi
 	done
 
@@ -363,6 +553,7 @@ dedup_desktop_files() {
 	log_info "  跳过 (NoDisplay): ${STAT_SKIPPED_FILES}"
 	log_info "  唯一文件: ${STAT_UNIQUE_FILES}"
 	log_info "  删除重复: ${STAT_DUPLICATE_FILES}"
+	log_info "  合并字段: ${STAT_MERGED_FIELDS}"
 
 	if [ ${STAT_DUPLICATE_FILES} -gt 0 ]; then
 		log_warning "已去除 ${STAT_DUPLICATE_FILES} 个重复 desktop 文件"

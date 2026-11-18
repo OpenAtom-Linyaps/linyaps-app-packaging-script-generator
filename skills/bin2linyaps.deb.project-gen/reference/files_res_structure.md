@@ -51,6 +51,16 @@ templates/files_res/
 - 多个类别用 `;` 分隔，结尾必须有 `;`
 - 常见类别：`Development`、`IDE`、`TextEditor`、`Utility`、`Graphics`、`Network`、`Office`、`AudioVideo`、`Game`
 
+### 字段合并
+
+跨目录去重时，`dedup_desktop_files.sh` 删除 binary/ 重复 desktop 前会先将 binary/ 中 files_res/ **缺失**的字段合并到 files_res/ 文件：
+
+- **files_res/ 已有的字段值保留不变**（模板权威），仅追加缺失的 key
+- 合并本地化字段：`Name[locale]`、`Comment[locale]`、`GenericName[locale]`、`Keywords[locale]`（每个语言一个 key，不冲突）
+- 合并非本地化字段：`Comment`、`GenericName`、`Categories`、`MimeType`、`Keywords`、`Terminal`、`StartupNotify`、`StartupWMClass`、`Encoding`（仅当 files_res/ 缺失时补充）
+- `[Desktop Action xxx]` 段：files_res/ 缺少的整段追加；已有段内逐字段比较补充缺失 key
+- 不合并：`Exec`（pak_linyaps.sh 统一重写）、`NoDisplay`（分组用）、`Path`、`Type`、`Icon`、`Name`（无 locale）
+
 ### 示例
 
 ```desktop

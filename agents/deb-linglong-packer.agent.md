@@ -55,6 +55,7 @@ permission:
 | bin2linyaps.external-missing-deps-fetch | `skills/bin2linyaps.external-missing-deps-fetch/SKILL.md` | 共享（条件） | `scripts/fetch_missing_deps.sh` |
 | bin2linyaps.fix | `skills/bin2linyaps.fix/SKILL.md` | 共享 | `scripts/fix_package_id.sh`、`scripts/validate_package_id.sh` |
 | bin2linyaps.git-cleanup | `skills/bin2linyaps.git-cleanup/SKILL.md` | 清理 | `scripts/clean_project_cache.sh`、`scripts/pre-commit-guard.sh` |
+| bin2linyaps.debug | `skills/bin2linyaps.debug/SKILL.md` | 调试 | 无（LLM 直接执行 ll-builder/pak_linyaps） |
 
 ## 工作流程
 

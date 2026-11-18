@@ -366,7 +366,7 @@ fi
 | 構建時 | pak_linyaps.sh | 創建 wrapper 腳本（binary_name 優先策略，bin/${APP_PREFIX}.wrapper） |
 | 構建時 | pak_linyaps.sh | 更新 linglong.yaml 的 command（sed 替換為數組格式） |
 | 構建時 | pak_linyaps.sh | 更新 linglong.yaml 的 base/runtime（sed 延遲注入） |
-| 構建時 | pak_linyaps.sh | 更新 desktop 的 Exec（替換為 wrapper） |
+| 構建時 | pak_linyaps.sh | 更新 desktop 的 Exec（兩優先級匹配替換為 wrapper） |
 | 構建時 | pak_linyaps.sh | Desktop 文件去重（dedup_desktop_files.sh 兩步去重） |
 | 構建時 | pak_linyaps.sh | 嵌套 bin/ 路徑驗證（validate_bin_nesting.sh） |
 | 構建時 | pak_linyaps.sh | 非標準目錄 .so 軟鏈修復（handle_special_paths.sh --phase=libfix，含 SONAME 補全） |

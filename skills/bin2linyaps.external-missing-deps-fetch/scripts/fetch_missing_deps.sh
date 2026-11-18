@@ -8,7 +8,7 @@
 set -euo pipefail
 
 print_usage() {
-    cat <<EOF
+	cat <<EOF
 用法: $(basename "$0") --project-dir=<project_dir> [--build-tmp-dir=<build_tmp_dir>]
 
 分析 missing_deps 文件，搜索 apt 包名，更新 templates/linglong.yaml，
@@ -21,8 +21,8 @@ print_usage() {
 EOF
 }
 
-log_info()  { echo "[INFO]  $*" >&2; }
-log_warn()  { echo "[WARN]  $*" >&2; }
+log_info() { echo "[INFO]  $*" >&2; }
+log_warn() { echo "[WARN]  $*" >&2; }
 log_error() { echo "[ERROR] $*" >&2; }
 
 cleanup() { rm -rf "$TEMP_DIR"; }
@@ -33,29 +33,45 @@ PROJECT_DIR=""
 BUILD_TMP_DIR=""
 
 while [[ $# -gt 0 ]]; do
-    case "$1" in
-        --project-dir=*) PROJECT_DIR="${1#*=}"; shift ;;
-        --build-tmp-dir=*) BUILD_TMP_DIR="${1#*=}"; shift ;;
-        --help|-h) print_usage; exit 0 ;;
-        *) log_error "未知参数: $1"; print_usage; exit 1 ;;
-    esac
+	case "$1" in
+	--project-dir=*)
+		PROJECT_DIR="${1#*=}"
+		shift
+		;;
+	--build-tmp-dir=*)
+		BUILD_TMP_DIR="${1#*=}"
+		shift
+		;;
+	--help | -h)
+		print_usage
+		exit 0
+		;;
+	*)
+		log_error "未知参数: $1"
+		print_usage
+		exit 1
+		;;
+	esac
 done
 
 if [ -z "$PROJECT_DIR" ]; then
-    log_error "缺少 --project-dir 参数"; print_usage; exit 1
+	log_error "缺少 --project-dir 参数"
+	print_usage
+	exit 1
 fi
 if [ ! -d "$PROJECT_DIR" ]; then
-    log_error "项目目录不存在: $PROJECT_DIR"; exit 1
+	log_error "项目目录不存在: $PROJECT_DIR"
+	exit 1
 fi
 PROJECT_DIR="$(cd "$PROJECT_DIR" && pwd)"
 
 if [ -n "$BUILD_TMP_DIR" ]; then
-    if [ ! -d "$BUILD_TMP_DIR" ]; then
-        log_warn "构建临时目录不存在: $BUILD_TMP_DIR，将仅搜索项目目录"
-        BUILD_TMP_DIR=""
-    else
-        BUILD_TMP_DIR="$(cd "$BUILD_TMP_DIR" && pwd)"
-    fi
+	if [ ! -d "$BUILD_TMP_DIR" ]; then
+		log_warn "构建临时目录不存在: $BUILD_TMP_DIR，将仅搜索项目目录"
+		BUILD_TMP_DIR=""
+	else
+		BUILD_TMP_DIR="$(cd "$BUILD_TMP_DIR" && pwd)"
+	fi
 fi
 
 log_info "项目目录:       $PROJECT_DIR"
@@ -67,49 +83,56 @@ MISSING_DEPS_FILE=""
 
 # 优先 build_tmp_dir（ll-builder 的产物）
 if [ -n "$BUILD_TMP_DIR" ]; then
-    if [ -f "${BUILD_TMP_DIR}/missing_deps.json" ]; then
-        MISSING_DEPS_FILE="${BUILD_TMP_DIR}/missing_deps.json"
-    elif [ -f "${BUILD_TMP_DIR}/missing_deps.csv" ]; then
-        MISSING_DEPS_FILE="${BUILD_TMP_DIR}/missing_deps.csv"
-    fi
+	if [ -f "${BUILD_TMP_DIR}/missing_deps.json" ]; then
+		MISSING_DEPS_FILE="${BUILD_TMP_DIR}/missing_deps.json"
+	elif [ -f "${BUILD_TMP_DIR}/missing_deps.csv" ]; then
+		MISSING_DEPS_FILE="${BUILD_TMP_DIR}/missing_deps.csv"
+	fi
 fi
 
 # 回退 project_dir
 if [ -z "$MISSING_DEPS_FILE" ]; then
-    if [ -f "${PROJECT_DIR}/missing_deps.json" ]; then
-        MISSING_DEPS_FILE="${PROJECT_DIR}/missing_deps.json"
-    elif [ -f "${PROJECT_DIR}/missing_deps.csv" ]; then
-        MISSING_DEPS_FILE="${PROJECT_DIR}/missing_deps.csv"
-    fi
+	if [ -f "${PROJECT_DIR}/missing_deps.json" ]; then
+		MISSING_DEPS_FILE="${PROJECT_DIR}/missing_deps.json"
+	elif [ -f "${PROJECT_DIR}/missing_deps.csv" ]; then
+		MISSING_DEPS_FILE="${PROJECT_DIR}/missing_deps.csv"
+	fi
 fi
 
 if [ -z "$MISSING_DEPS_FILE" ]; then
-    log_info "未找到 missing_deps 文件，无需处理"; exit 0
+	log_info "未找到 missing_deps 文件，无需处理"
+	exit 0
 fi
 
 log_info "读取缺失依赖报告: $MISSING_DEPS_FILE"
 
 case "$MISSING_DEPS_FILE" in
-    *.json) jq -r '.[].dependency' "$MISSING_DEPS_FILE" 2>/dev/null | sort -u > "$SO_LIST" ;;
-    *.csv)  awk -F',' 'NR>1{print $1}' "$MISSING_DEPS_FILE" 2>/dev/null | sort -u > "$SO_LIST" ;;
+*.json) jq -r '.[].dependency' "$MISSING_DEPS_FILE" 2>/dev/null | sort -u >"$SO_LIST" ;;
+*.csv) awk -F',' 'NR>1{print $1}' "$MISSING_DEPS_FILE" 2>/dev/null | sort -u >"$SO_LIST" ;;
 esac
 
-SO_COUNT=$(wc -l < "$SO_LIST")
+SO_COUNT=$(wc -l <"$SO_LIST")
 log_info "提取到 $SO_COUNT 个唯一的 .so 依赖"
-[ "$SO_COUNT" -eq 0 ] && { log_info "没有缺失依赖，无需处理"; exit 0; }
+[ "$SO_COUNT" -eq 0 ] && {
+	log_info "没有缺失依赖，无需处理"
+	exit 0
+}
 
 log_info "开始通过 apt-file 搜索包名..."
 search_package() {
-    local so_name="$1"
-    local result
-    result=$(apt-file search -x "/${so_name}$" 2>/dev/null | cut -d: -f1 | sort -u || true)
-    [ -n "$result" ] && echo "$result" || log_warn "未找到提供 $so_name 的包"
+	local so_name="$1"
+	local result
+	result=$(apt-file search -x "/${so_name}$" 2>/dev/null | cut -d: -f1 | sort -u || true)
+	[ -n "$result" ] && echo "$result" || log_warn "未找到提供 $so_name 的包"
 }
 export -f search_package log_warn
-cat "$SO_LIST" | xargs -P "$(nproc)" -I{} bash -c 'search_package "$@"' _ {} | sort -u > "$PKG_LIST"
+cat "$SO_LIST" | xargs -P "$(nproc)" -I{} bash -c 'search_package "$@"' _ {} | sort -u >"$PKG_LIST"
 
-PKG_COUNT=$(wc -l < "$PKG_LIST")
-[ "$PKG_COUNT" -eq 0 ] && { log_info "没有搜索到任何包名，无需更新"; exit 0; }
+PKG_COUNT=$(wc -l <"$PKG_LIST")
+[ "$PKG_COUNT" -eq 0 ] && {
+	log_info "没有搜索到任何包名，无需更新"
+	exit 0
+}
 
 # ==== 写入门禁：存在性校验主防线 ====
 # apt-file 可能命中 Contents 索引中存在、但当前 apt 仓库中不存在/无法下载的包名。
@@ -117,27 +140,30 @@ PKG_COUNT=$(wc -l < "$PKG_LIST")
 # 不存在的包一律剔除，不允许写入 buildext.apt.depends。
 log_info "开始逐包核验 apt 仓库存在性（${PKG_COUNT} 个包）..."
 VERIFIED_PKG_LIST="${TEMP_DIR}/verified_pkg_list.txt"
-: > "$VERIFIED_PKG_LIST"
+: >"$VERIFIED_PKG_LIST"
 TOTAL_PKGS_SAVED=$PKG_COUNT
 while IFS= read -r pkg; do
-    [ -z "$pkg" ] && continue
-    if apt-cache show "${pkg%% *}" 2>/dev/null | grep -q '^Package:'; then
-        echo "$pkg" >> "$VERIFIED_PKG_LIST"
-    else
-        log_warn "包 $pkg 在当前 apt 仓库中不存在，已剔除"
-    fi
-done < "$PKG_LIST"
-PKG_COUNT=$(wc -l < "$VERIFIED_PKG_LIST")
+	[ -z "$pkg" ] && continue
+	if apt-cache show "${pkg%% *}" 2>/dev/null | grep -q '^Package:'; then
+		echo "$pkg" >>"$VERIFIED_PKG_LIST"
+	else
+		log_warn "包 $pkg 在当前 apt 仓库中不存在，已剔除"
+	fi
+done <"$PKG_LIST"
+PKG_COUNT=$(wc -l <"$VERIFIED_PKG_LIST")
 log_info "核验后保留 $PKG_COUNT 个可用包（剔除 $((TOTAL_PKGS_SAVED - PKG_COUNT)) 个）"
-[ "$PKG_COUNT" -eq 0 ] && { log_info "核验后无可用包，无需更新"; exit 0; }
+[ "$PKG_COUNT" -eq 0 ] && {
+	log_info "核验后无可用包，无需更新"
+	exit 0
+}
 PKG_LIST="$VERIFIED_PKG_LIST"
 
 # ==== 关键：只修改 templates/linglong.yaml（源模板），不碰 build_tmp 中的副本 ====
 YAML_FILE="${PROJECT_DIR}/templates/linglong.yaml"
 if [ ! -f "$YAML_FILE" ]; then
-    log_error "未找到 templates/linglong.yaml（模板文件）: $YAML_FILE"
-    log_error "目标必须是 templates/linglong.yaml（含 ${ll_version} 等 envsubst 变量）"
-    exit 1
+	log_error "未找到 templates/linglong.yaml（模板文件）: $YAML_FILE"
+	log_error "目标必须是 templates/linglong.yaml（含 ${ll_version} 等 envsubst 变量）"
+	exit 1
 fi
 log_info "更新模板文件: $YAML_FILE"
 
@@ -174,51 +200,51 @@ with open('${YAML_FILE}', 'w') as f:
     ry.dump(data, f)
 
 print('\n'.join(new_pkgs))
-" > "${TEMP_DIR}/update_result.txt" 2>&1 || true
+" >"${TEMP_DIR}/update_result.txt" 2>&1 || true
 
 UPDATE_RESULT=$(cat "${TEMP_DIR}/update_result.txt")
 if [ "$UPDATE_RESULT" = "NO_NEW_PKGS" ]; then
-    log_info "所有包名已存在于 depends 中，无需更新"
-    HAS_NEW_PKGS=0
+	log_info "所有包名已存在于 depends 中，无需更新"
+	HAS_NEW_PKGS=0
 elif [ -z "$UPDATE_RESULT" ]; then
-    HAS_NEW_PKGS=0
+	HAS_NEW_PKGS=0
 else
-    HAS_NEW_PKGS=$(echo "$UPDATE_RESULT" | wc -l)
-    log_info "新增 $HAS_NEW_PKGS 个包到 buildext.apt.depends:"
-    echo "$UPDATE_RESULT" | while IFS= read -r pkg; do log_info "  + $pkg"; done
-    echo "$UPDATE_RESULT" > "${TEMP_DIR}/new_pkgs_for_url.txt"
+	HAS_NEW_PKGS=$(echo "$UPDATE_RESULT" | wc -l)
+	log_info "新增 $HAS_NEW_PKGS 个包到 buildext.apt.depends:"
+	echo "$UPDATE_RESULT" | while IFS= read -r pkg; do log_info "  + $pkg"; done
+	echo "$UPDATE_RESULT" >"${TEMP_DIR}/new_pkgs_for_url.txt"
 fi
 
 # ==== 获取下载 URL ====
 URL_COUNT=0
 if [ "${HAS_NEW_PKGS:-0}" -ne 0 ] && [ -f "${TEMP_DIR}/new_pkgs_for_url.txt" ]; then
-    URL_FILE="${TEMP_DIR}/urls.txt"
-    log_info "获取新包的下载 URL..."
-    while IFS= read -r pkg; do
-        [ -z "$pkg" ] && continue
-        url=$(apt-get download --print-uris "$pkg" 2>/dev/null | awk -F"'" '{print $2}' || true)
-        [ -n "$url" ] && echo "$url" >> "$URL_FILE" || log_warn "无法获取 $pkg 的下载 URL"
-    done < "${TEMP_DIR}/new_pkgs_for_url.txt"
-    if [ -f "$URL_FILE" ]; then
-        sort -u "$URL_FILE" -o "$URL_FILE"
-        URL_COUNT=$(wc -l < "$URL_FILE")
-        log_info "获取到 $URL_COUNT 个 deb 下载 URL"
-    fi
+	URL_FILE="${TEMP_DIR}/urls.txt"
+	log_info "获取新包的下载 URL..."
+	while IFS= read -r pkg; do
+		[ -z "$pkg" ] && continue
+		url=$(apt-get download --print-uris "$pkg" 2>/dev/null | awk -F"'" '{print $2}' || true)
+		[ -n "$url" ] && echo "$url" >>"$URL_FILE" || log_warn "无法获取 $pkg 的下载 URL"
+	done <"${TEMP_DIR}/new_pkgs_for_url.txt"
+	if [ -f "$URL_FILE" ]; then
+		sort -u "$URL_FILE" -o "$URL_FILE"
+		URL_COUNT=$(wc -l <"$URL_FILE")
+		log_info "获取到 $URL_COUNT 个 deb 下载 URL"
+	fi
 fi
 
 # ==== 生成 missing_deps_urls.conf + download_missing_deps.sh（到 project_dir 根目录）====
 CONF_FILE="${PROJECT_DIR}/missing_deps_urls.conf"
 if [ "$URL_COUNT" -gt 0 ]; then
-    log_info "生成 missing_deps_urls.conf..."
-    {
-        echo "# 由 bin2linyaps.external-missing-deps-fetch 自动生成"
-        echo "# 位于 $(basename "$PROJECT_DIR")/，与 pak_linyaps.sh 同级"
-        echo "# 可人工编辑：增删改 URL 行后重新运行 download_missing_deps.sh 即可"
-        echo "MISSING_DEPS_URLS=("
-        awk '{print "  \"" $0 "\""}' "$URL_FILE"
-        echo ")"
-    } > "$CONF_FILE"
-    log_info "生成: $CONF_FILE"
+	log_info "生成 missing_deps_urls.conf..."
+	{
+		echo "# 由 bin2linyaps.external-missing-deps-fetch 自动生成"
+		echo "# 位于 $(basename "$PROJECT_DIR")/，与 pak_linyaps.sh 同级"
+		echo "# 可人工编辑：增删改 URL 行后重新运行 download_missing_deps.sh 即可"
+		echo "MISSING_DEPS_URLS=("
+		awk '{print "  \"" $0 "\""}' "$URL_FILE"
+		echo ")"
+	} >"$CONF_FILE"
+	log_info "生成: $CONF_FILE"
 fi
 
 # download_missing_deps.sh 已改为静态脚本，不再由 fetch_missing_deps.sh 生成

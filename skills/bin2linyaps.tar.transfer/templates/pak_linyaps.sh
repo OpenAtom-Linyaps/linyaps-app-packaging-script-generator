@@ -11,7 +11,7 @@
 #=============================================================================
 
 srcType="tar"
-templateVer="2026.9.14.1"
+templateVer="2026.10.26.1"
 
 set -x
 
@@ -38,6 +38,10 @@ auto_clean="false"
 auto_push="${push}"
 ## 额外构建参数，原样追加到 ll-builder build（默认含 --skip-output-check）
 build_extra_args="--skip-output-check"
+
+# 为 true 时跳过特殊路径文件名标准化（保留原始文件名，disable fallback）
+skip_special_paths="false"
+
 repo_name="nightly"
 repo_url="https://repo-dev.cicd.getdeepin.org"
 push_account_user=""
@@ -137,6 +141,9 @@ init_global_data() {
 			;;
 		--nested_script)
 			nested_script="$val"
+			;;
+		--skip_special_paths)
+			skip_special_paths="$val"
 			;;
 		esac
 	done
@@ -664,7 +671,12 @@ build_pak() {
 	#    例如：/opt/uTools/ -> binary/uTools/ (去掉 opt/ 層級)
 	# 3. 支持包含空格、括號、中文、&、@、#、$ 等特殊字符的路徑
 	# 注意：此操作必須在所有軟鏈動作之前完成，否則軟鏈關係將被破壞
-	"${project_root}/scripts/handle_special_paths.sh" --phase=paths "${binary_tmp_dir}" "${binary_dir}"
+	# --skip_special_paths=true 时禁用文件名标准化（disable fallback），保留原始文件名
+	local sp_args=()
+	if [ "${skip_special_paths}" = "true" ]; then
+		sp_args+=(--skip_normalize)
+	fi
+	"${project_root}/scripts/handle_special_paths.sh" --phase=paths "${binary_tmp_dir}" "${binary_dir}" "${sp_args[@]}"
 
 	# 創建 bin/ 目錄用於存放 wrapper 腳本
 	# 注意：此操作必須在特殊路徑處理完成之後進行
@@ -674,20 +686,16 @@ build_pak() {
 	# 在 files/bin/ 創建 wrapper 腳本，執行實際二進制文件
 	# 注意：此操作必須在所有文件複製和路徑處理完成之後進行
 
-	# 標記 binary_name 是否為用戶顯式指定
-	# 用於決定 desktop Exec= 替換策略：
-	#   - 客製化模式（用戶指定）：無條件替換所有 desktop 的 Exec= 為 wrapper
-	#   - 自動偵測模式（從 desktop 提取）：只替換 Exec= 包含 binary_name 的行
-	is_custom_binary_name=false
-	if [ -n "${binary_name}" ]; then
-		is_custom_binary_name=true
-	fi
+	# 记录 binary_name 是否为用户原始指定（非自动检测）
+	# 用于 desktop Exec 替换的优先级2判定
+	local binary_name_is_original=true
 
 	if [ -z "${binary_name}" ]; then
 		# 未指定 binary_name 時，自動從 desktop 文件中提取
 		# 同時搜索 binary/（解壓的 tar 內容）和 files_res/（LLM 初始化的模板資源）
 		echo "binary_name not specified, auto-detecting from desktop files..."
 		binary_name=$(extract_binary_name_from_desktop "${binary_dir}" "${build_tmp_dir}/files_res")
+		binary_name_is_original=false
 		if [ -z "${binary_name}" ]; then
 			# 第二級 fallback：調用 scan_executables.sh 掃描
 			echo "未從 desktop 偵測到 binary_name，嘗試 scan_executables.sh 掃描..."
@@ -836,100 +844,78 @@ WRAPPER_EOF
 			fi
 
 			# 更新 desktop 文件的 Exec= 字段
-			# 根據 binary_name 來源採用不同替換策略：
-			#   - 客製化模式：無條件替換所有 desktop 的 Exec= 為 wrapper
-			#   - 自動偵測模式：只替換 Exec= 包含 binary_name 的行
+			# 优先级匹配规则：
+			#   优先级1: Exec 行包含 binary_name → 替换为 wrapper
+			#   优先级2: binary_name 来自原始配置且 exec_bin_name 存在于 binary_dir → 强制替换
+			#   未匹配: 不替换
+			local desktop_updated=0
 			for desktop_file in $(find "${build_tmp_dir}" -name "*.desktop" -type f 2>/dev/null); do
-				if [ "${is_custom_binary_name}" = "true" ]; then
-					# 客製化模式：無條件替換所有 Exec= 行
-					# 處理 env 前綴（如 Exec=env VAR=val binary args）
-					# 移除 env 前綴，將第一個二進制參數替換為 wrapper，保留其餘參數
-					while IFS= read -r exec_line; do
-						[ -z "${exec_line}" ] && continue
-						# 提取 Exec= 後的完整值
-						exec_value="${exec_line#Exec=}"
-						# 移除 env VAR=val 前綴（支持多個 KEY=VALUE 環境變數）
+				local tmp_file="${desktop_file}.tmp"
+				>"${tmp_file}"
+				local file_updated=false
+				while IFS= read -r line; do
+					if [[ "${line}" == Exec=* ]]; then
+						exec_value="${line#Exec=}"
+						# 移除 env VAR=val 前缀
 						exec_value=$(echo "${exec_value}" | sed 's/^env \(\S*=\S*\s\)*//')
-						# 提取第一個參數（二進制名/路徑）和其餘參數
-						exec_bin=$(echo "${exec_value}" | awk '{print $1}')
+						exec_bin_path=$(echo "${exec_value}" | awk '{print $1}')
+						exec_bin_name=$(basename "${exec_bin_path}")
 						exec_args=$(echo "${exec_value}" | awk '{$1=""; print $0}' | sed 's/^ //')
-						# 若檢測到有風險的腳本，過濾掉非 freedesktop 佔位符參數
-						# 防止 --no-sandbox 等參數通過 desktop 文件流入腳本的 $1
-						if [ "${has_risk}" = "true" ] && [ -n "${exec_args}" ]; then
-							local filtered_args=""
-							for arg in ${exec_args}; do
-								case "${arg}" in
+
+						local do_replace=false
+
+						# 优先级1: Exec 行包含 binary_name → 替换为 wrapper
+						if echo "${exec_value}" | grep -qF "${binary_name}"; then
+							do_replace=true
+						fi
+
+						# 优先级2: binary_name 来自原始配置且 exec_bin_name 也存在于 binary_dir → 强制替换
+						if [ "${do_replace}" = false ] && [ "${binary_name_is_original}" = true ]; then
+							if find "${binary_dir}" -type f -name "${exec_bin_name}" 2>/dev/null | grep -q .; then
+								do_replace=true
+							fi
+						fi
+
+						if [ "${do_replace}" = true ]; then
+							# 若检测到有风险的脚本，过滤掉非 freedesktop 占位符参数
+							if [ "${has_risk}" = "true" ] && [ -n "${exec_args}" ]; then
+								local filtered_args=""
+								for arg in ${exec_args}; do
+									case "${arg}" in
 									%[UuFfickDdNn])
 										filtered_args="${filtered_args} ${arg}"
 										;;
 									*)
-										echo "  過濾掉風險參數: ${arg}"
+										echo "  过滤掉风险参数: ${arg}"
 										;;
-								esac
-							done
-							exec_args="${filtered_args# }"
-						fi
-						# 替換為 wrapper
-						new_exec="Exec=${exec_target}"
-						if [ -n "${exec_args}" ]; then
-							new_exec="${new_exec} ${exec_args}"
-						fi
-						# 在文件中替換該行
-                        # 逐行替换完整 Exec 行；原始命令可能含 |、引号、反斜杠等 sed 特殊字符。
-                        local tmp_exec_file="${desktop_file}.tmp"
-                        > "${tmp_exec_file}"
-                        while IFS= read -r line; do
-                            if [[ "${line}" == "${exec_line}" ]]; then
-                                printf '%s\n' "${new_exec}" >> "${tmp_exec_file}"
-                            else
-                                printf '%s\n' "${line}" >> "${tmp_exec_file}"
-                            fi
-                        done < "${desktop_file}"
-                        mv "${tmp_exec_file}" "${desktop_file}"
-					done < <(grep "^Exec=" "${desktop_file}")
-					echo "Updated Exec= in: ${desktop_file} (custom binary: ${exec_target})"
-				else
-					# 自動偵測模式：只替換 Exec= 包含 binary_name 的行
-					# 處理 env 前綴，提取 args，必要時過濾風險參數
-					if grep -q "Exec=.*${binary_name}" "${desktop_file}"; then
-						local tmp_file="${desktop_file}.tmp"
-						> "${tmp_file}"
-						while IFS= read -r line; do
-							if [[ "${line}" == Exec=*${binary_name}* ]]; then
-								exec_value="${line#Exec=}"
-								# 移除 env VAR=val 前綴
-								exec_value=$(echo "${exec_value}" | sed 's/^env \(\S*=\S*\s\)*//')
-								exec_bin=$(echo "${exec_value}" | awk '{print $1}')
-								exec_args=$(echo "${exec_value}" | awk '{$1=""; print $0}' | sed 's/^ //')
-								# 若檢測到有風險的腳本，過濾掉非 freedesktop 佔位符參數
-								if [ "${has_risk}" = "true" ] && [ -n "${exec_args}" ]; then
-									local filtered_args=""
-									for arg in ${exec_args}; do
-										case "${arg}" in
-											%[UuFfickDdNn])
-												filtered_args="${filtered_args} ${arg}"
-												;;
-											*)
-												echo "  過濾掉風險參數: ${arg}"
-												;;
-										esac
-									done
-									exec_args="${filtered_args# }"
-								fi
-								new_exec="Exec=${exec_target}"
-								if [ -n "${exec_args}" ]; then
-									new_exec="${new_exec} ${exec_args}"
-								fi
-								echo "${new_exec}" >> "${tmp_file}"
-							else
-								echo "${line}" >> "${tmp_file}"
+									esac
+								done
+								exec_args="${filtered_args# }"
 							fi
-						done < "${desktop_file}"
-						mv "${tmp_file}" "${desktop_file}"
-						echo "Updated Exec= in: ${desktop_file}"
+							new_exec="Exec=${exec_target}"
+							if [ -n "${exec_args}" ]; then
+								new_exec="${new_exec} ${exec_args}"
+							fi
+							echo "${new_exec}" >>"${tmp_file}"
+							file_updated=true
+						else
+							echo "${line}" >>"${tmp_file}"
+						fi
+					else
+						echo "${line}" >>"${tmp_file}"
 					fi
+				done <"${desktop_file}"
+				if [ "${file_updated}" = true ]; then
+					mv "${tmp_file}" "${desktop_file}"
+					echo "Updated Exec= in: ${desktop_file}"
+					desktop_updated=$((desktop_updated + 1))
+				else
+					rm -f "${tmp_file}"
 				fi
 			done
+			if [ "${desktop_updated}" -eq 0 ]; then
+				echo "[Warning] No desktop files were updated with wrapper Exec. Verify binary_name and desktop file Exec entries."
+			fi
 		else
 			echo "Warning: No valid binary found for '${binary_name}' in ${binary_dir} (all candidates failed ELF compatibility check or not found)"
 		fi

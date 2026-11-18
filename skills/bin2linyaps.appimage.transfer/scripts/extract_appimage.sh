@@ -13,8 +13,8 @@ set -euo pipefail
 
 # 參數驗證
 if [ $# -lt 2 ]; then
-    echo "用法: $0 <appimage_path> <output_dir>" >&2
-    exit 1
+	echo "用法: $0 <appimage_path> <output_dir>" >&2
+	exit 1
 fi
 
 appimage_path="$1"
@@ -22,21 +22,21 @@ output_dir="$2"
 
 # 驗證輸入文件
 if [ ! -f "${appimage_path}" ]; then
-    echo "錯誤: AppImage 文件不存在: ${appimage_path}" >&2
-    exit 1
+	echo "錯誤: AppImage 文件不存在: ${appimage_path}" >&2
+	exit 1
 fi
 
 # 驗證文件格式（必須是 ELF 或 AppImage）
 file_output=$(file "${appimage_path}")
 case "${file_output}" in
-    *"ELF"*|*"AppImage"*)
-        # 有效的 AppImage 文件
-        ;;
-    *)
-        echo "錯誤: 文件不是有效的 AppImage: ${appimage_path}" >&2
-        echo "  file 輸出: ${file_output}" >&2
-        exit 1
-        ;;
+*"ELF"* | *"AppImage"*)
+	# 有效的 AppImage 文件
+	;;
+*)
+	echo "錯誤: 文件不是有效的 AppImage: ${appimage_path}" >&2
+	echo "  file 輸出: ${file_output}" >&2
+	exit 1
+	;;
 esac
 
 # 創建輸出目錄
@@ -48,17 +48,17 @@ mkdir -p "${output_dir}"
 echo "正在解壓 AppImage: ${appimage_path}"
 cd "${output_dir}"
 chmod +x "${appimage_path}"
-"${appimage_path}" --appimage-extract > /dev/null 2>&1
+"${appimage_path}" --appimage-extract >/dev/null 2>&1
 
 # 驗證解壓結果
 if [ ! -d "${output_dir}/squashfs-root" ]; then
-    echo "錯誤: 解壓失敗，squashfs-root 目錄不存在" >&2
-    exit 1
+	echo "錯誤: 解壓失敗，squashfs-root 目錄不存在" >&2
+	exit 1
 fi
 
 # 檢查 AppRun 是否存在（AppImage 規範要求）
 if [ ! -e "${output_dir}/squashfs-root/AppRun" ]; then
-    echo "警告: squashfs-root 中未找到 AppRun（某些 AppImage 變體可能使用 AppRun.wrapped）" >&2
+	echo "警告: squashfs-root 中未找到 AppRun（某些 AppImage 變體可能使用 AppRun.wrapped）" >&2
 fi
 
 echo "AppImage 解壓成功: ${output_dir}/squashfs-root"
