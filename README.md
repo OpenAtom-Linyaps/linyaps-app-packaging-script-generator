@@ -457,17 +457,15 @@ A: 在CSV中为同一包名指定多行，每行一个架构。
 
 | 级别 | 路径 | 说明 |
 |-----|------|------|
-| 全局（推荐） | `skills/config/base_runtime_whitelist.conf` | 所有 skill 和工程共享的权威来源 |
-| Skill 级别 | `skills/bin2linyaps.deb.project-gen/config/base_runtime_whitelist.conf` | 本地副本，生成工程时同步 |
-| 工程级别 | `CI_ll_<package_id>/config/base_runtime_whitelist.conf` | 工程私有配置 |
+| 全局（唯一权威） | `skills/config/base_runtime_whitelist.conf` | 所有 skill 和工程共享的唯一权威来源 |
+| 工程级别 | `CI_ll_<package_id>/config/base_runtime_whitelist.conf` | 生成工程时从全局同步的副本 |
 
 ### 白名单查找优先级
 
 1. CLI 参数 `--whitelist` 指定的路径
 2. 环境变量 `LINGLONG_WHITELIST_FILE` 指定的路径
-3. 工程目录下 `config/base_runtime_whitelist.conf`
-4. 脚本所在目录的 `config/base_runtime_whitelist.conf`（skill 级别）
-5. `skills/config/base_runtime_whitelist.conf`（全局）⭐
+3. 工程目录下 `config/base_runtime_whitelist.conf`（全局同步副本）
+4. `skills/config/base_runtime_whitelist.conf`（全局，唯一权威）⭐
 
 ### 白名单配置文件格式
 

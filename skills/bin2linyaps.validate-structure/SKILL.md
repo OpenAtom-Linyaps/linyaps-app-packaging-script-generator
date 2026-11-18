@@ -1,5 +1,5 @@
 ---
-name: bin2bin2linyaps.validate-structure
+name: bin2linyaps.validate-structure
 description: >
   验证玲珑打包项目目录结构和必要文件的完整性。支持通过JSON配置文件自定义检查规则，
   包括目录存在性、文件存在性、通配符匹配数量、脚本可执行权限等。
@@ -98,6 +98,8 @@ if [ $? -ne 0 ]; then
     # 调用 bin2linyaps.fix skill
 fi
 ```
+
+> **上下文效率**：调用务必带 `--json`，只把 JSON 报告（`passed`/`errors[]`/`summary`）纳入上下文；不要对 `CI_ll_<package_id>/` 做全量逐文件走查。失败项如需定位，仅对 `errors[].pattern` 指向的文件单独 read。
 
 ## 输出格式
 

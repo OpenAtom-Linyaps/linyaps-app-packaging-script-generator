@@ -48,6 +48,8 @@ com.example.app,x86_64,1.0.0,https://example.com/app.deb
 
 批量初始化会为每个任务创建 `CI_ll_<pkgName>` 目录，包含：`linglong.yaml`、`pak_linyaps.sh`、`scripts/`、`config/`（含白名单）、`templates/files_res/`（空骨架）。
 
+> **上下文效率**：生成工程后 agent **禁止整卷 read `CI_ll_<package_id>/` 全树**。只读 `linglong.yaml` + `scripts/` 目录 listing；`pak_linyaps.sh`（1127 行模板正文）只在构建时由脚本自身执行，init 阶段不进入 agent 上下文，仅 `grep '^ll_id=\|^binary_name='` 确认注入正确。
+
 ## 工作流程
 
 ### 1. 准备工程目录
@@ -63,24 +65,23 @@ cp "scripts/handle_special_paths.sh" "${project_dir}/scripts/" && chmod +x "${pr
 cp "scripts/dedup_desktop_files.sh" "${project_dir}/scripts/" && chmod +x "${project_dir}/scripts/dedup_desktop_files.sh"
 cp "scripts/validate_bin_nesting.sh" "${project_dir}/scripts/" && chmod +x "${project_dir}/scripts/validate_bin_nesting.sh"
 cp "scripts/download_missing_deps.sh" "${project_dir}/scripts/" && chmod +x "${project_dir}/scripts/download_missing_deps.sh"
+# 存量部署提示：download_missing_deps.sh 是静态快照，随初始化复制进工程 scripts/。
+# 若工程在本 skill 修复 usr/ 平铺（不再产生 binary_dir/usr/…）之前初始化，
+# 其 scripts/ 内仍是旧脚本；需重新执行上面这条 cp 刷新，否则依赖的 bin/lib 仍会落到 /usr/usr/…。
 if [ -f "scripts/analyze_entry_script.sh" ]; then
   cp "scripts/analyze_entry_script.sh" "${project_dir}/scripts/" && chmod +x "${project_dir}/scripts/analyze_entry_script.sh"
 fi
 
-# 拷贝白名单配置（优先全局）
-if [ -f "${skill_root}/../config/base_runtime_whitelist.conf" ]; then
-  cp "${skill_root}/../config/base_runtime_whitelist.conf" "${project_dir}/config/"
-else
-  cp "${skill_root}/config/base_runtime_whitelist.conf" "${project_dir}/config/"
-fi
+# 拷贝白名单配置（本 skill 自带的 config/ 自包含副本）
+cp "${skill_root}/config/base_runtime_whitelist.conf" "${project_dir}/config/"
 # 注意：不创建 src/ 目录，deb文件路径由用户执行脚本时指定
 ```
 
 **验证 package_id**：
 
 ```bash
-"${skill_root}/../linyaps.fix/scripts/validate_package_id.sh" "${project_dir}"
-"${skill_root}/../linyaps.fix/scripts/fix_package_id.sh" "${project_dir}" --new-id "${package_id}"   # 验证失败时
+"skills/bin2linyaps.fix/scripts/validate_package_id.sh" "${project_dir}"
+"skills/bin2linyaps.fix/scripts/fix_package_id.sh" "${project_dir}" --new-id "${package_id}"   # 验证失败时
 ```
 
 **package_id 格式规范**：反向域名格式（`com.example.app`），小写字母/数字/下划线/点，至少两个点分隔部分，最大 255 字符。
@@ -123,12 +124,12 @@ build: |
 
 **在生成 pak_linyaps.sh 之前必须验证 base/runtime 组合**。不在白名单中的组合将阻止任务（exit 1）。
 
-**白名单查找优先级（本地优先全局）**：
+**白名单查找优先级（skill 自帶 config/ 自包含副本，全局為參考）**：
 1. CLI `--whitelist` 指定的路径
 2. 环境变量 `LINGLONG_WHITELIST_FILE`
-3. 工程目录 `config/base_runtime_whitelist.conf`
-4. skill 级别 `config/base_runtime_whitelist.conf`
-5. **全局 `skills/config/base_runtime_whitelist.conf`（推荐维护）** ⭐
+3. 工程目录 `config/base_runtime_whitelist.conf`（由本 skill 从自带副本同步）
+4. **本 skill 自带 `config/base_runtime_whitelist.conf`（自包含，`${skill_root}/config/`）** ⭐
+5. 全局 `skills/config/base_runtime_whitelist.conf`（参考副本）
 
 ```bash
 whitelist_file=""
@@ -140,8 +141,6 @@ elif [ -f "${project_dir}/config/base_runtime_whitelist.conf" ]; then
   whitelist_file="${project_dir}/config/base_runtime_whitelist.conf"
 elif [ -f "${skill_root}/config/base_runtime_whitelist.conf" ]; then
   whitelist_file="${skill_root}/config/base_runtime_whitelist.conf"
-elif [ -f "${skill_root}/../config/base_runtime_whitelist.conf" ]; then
-  whitelist_file="${skill_root}/../config/base_runtime_whitelist.conf"
 fi
 
 if [ -z "${whitelist_file}" ]; then
@@ -159,7 +158,7 @@ else
   if [ "${found}" -eq 0 ]; then
     echo "錯誤: base/runtime 組合不在白名單中，任務被阻止！" >&2
     echo "  當前組合: ${base_id}/${base_version} + ${runtime_id}/${runtime_version}" >&2
-    echo "  請先在白名單中添加（推薦：skills/config/base_runtime_whitelist.conf）" >&2
+    echo "  请先在本 skill 白名单中添加（配置：${skill_root}/config/base_runtime_whitelist.conf）" >&2
     exit 1
   fi
   echo "白名單驗證通過: ${base_id}/${base_version} + ${runtime_id}/${runtime_version}"
@@ -178,7 +177,7 @@ fi
 | `org.deepin.base/25.2.2` | `-` | 纯 base 应用（无 runtime） |
 | `org.deepin.base/23.1.0` | `-` | 纯 base 应用（无 runtime，23.1.0） |
 
-**推荐维护全局白名单**（`skills/config/base_runtime_whitelist.conf`），生成时自动同步到工程目录。
+**推荐维护本 skill 白名单**（`${skill_root}/config/base_runtime_whitelist.conf`，skill 自包含副本；同步更新全局 `skills/config/` 参考副本），生成时自动同步到工程目录。
 
 ### 3. 生成 pak_linyaps.sh
 

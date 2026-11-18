@@ -3,7 +3,7 @@
 set -x
 
 srcType="deb"
-templateVer="2026.8.14.3"
+templateVer="2026.9.14.1"
 
 # 默認 base/runtime 配置（可通過命令行參數覆蓋）
 DEFAULT_BASE_ID="org.deepin.base"
@@ -291,12 +291,12 @@ validate_base_runtime() {
 validate_base_runtime_whitelist() {
 	local wl_file=""
 
-	# 按優先級查找白名單配置文件（本地優先全局）：
+	# 按優先級查找白名單配置文件（skill 本地自包含優先）：
 	# 1. CLI 參數 --whitelist 指定的路徑
 	# 2. 環境變量 LINGLONG_WHITELIST_FILE 指定的路徑
 	# 3. 工程目錄下的 config/base_runtime_whitelist.conf
-	# 4. 腳本所在目錄的 config/base_runtime_whitelist.conf（skill 級別）
-	# 5. skills 全局目錄的 config/base_runtime_whitelist.conf（全局聲明）
+	# 4. 腳本所在目錄的 config/base_runtime_whitelist.conf（skill 自包含副本）
+	# 5. 向上查找全局 skills/config/base_runtime_whitelist.conf（參考副本）
 	if [ -n "${whitelist_file:-}" ] && [ -f "${whitelist_file}" ]; then
 		wl_file="${whitelist_file}"
 	elif [ -n "${LINGLONG_WHITELIST_FILE:-}" ] && [ -f "${LINGLONG_WHITELIST_FILE}" ]; then
@@ -304,12 +304,12 @@ validate_base_runtime_whitelist() {
 	elif [ -f "${project_root:-}/config/base_runtime_whitelist.conf" ]; then
 		wl_file="${project_root}/config/base_runtime_whitelist.conf"
 	else
-		# 嘗試相對於腳本目錄查找（skill 級別 → 全局）
+		# 嘗試相對於腳本目錄查找（skill 自包含副本 → 全局參考）
 		local script_dir
 		script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 		if [ -f "${script_dir}/config/base_runtime_whitelist.conf" ]; then
 			wl_file="${script_dir}/config/base_runtime_whitelist.conf"
-		# 全局白名單：腳本位於 skills/<skill>/templates/，全局配置位於 skills/config/
+		# 全局參考副本：腳本位於 skills/<skill>/templates/，向上查找 skills/config/
 		elif [ -f "${script_dir}/../config/base_runtime_whitelist.conf" ]; then
 			wl_file="${script_dir}/../config/base_runtime_whitelist.conf"
 		# 兼容：腳本位於更深層目錄時，向上查找 skills/config/
@@ -951,16 +951,10 @@ WRAPPER_EOF
 
 						local do_replace=false
 
-						# 优先级1: Exec 行包含 binary_name → 直接替换
-						if [[ "${line}" == Exec=*${binary_name}* ]]; then
-							do_replace=true
-						# 优先级2: binary_name 来自 CSV 原始配置且存在于 binary_dir，
-						#           exec_bin_name 也在 binary_dir 中 → 强制使用 binary_name.wrapper
-						elif [ "${binary_name_is_original}" = true ] && \
-						     find "${binary_dir}" -type f -name "${exec_bin_name}" 2>/dev/null | grep -q .; then
-							echo "  [Info] Desktop Exec '${exec_bin_name}' replaced with configured '${exec_target}'"
-							do_replace=true
-						fi
+                        # wrapper 已由当前构建流程成功创建；统一回写所有有效 desktop Exec，
+                        # 避免复杂命令（如 bash -c、sed、引号和管道）导致 binary_name 匹配失效。
+                        # 仍保留 Exec 的参数字段，并由 wrapper 原样接收。
+                        local do_replace=true
 
 						if [ "${do_replace}" = true ]; then
 							# 若检测到有风险的脚本，过滤掉非 freedesktop 占位符参数
@@ -1063,6 +1057,11 @@ WRAPPER_EOF
 	# 此文件用於標識由 linyaps 系統生成的構建產物
 	touch "${binary_dir}/.linyaps_genius"
 	echo "Created identity file: ${binary_dir}/.linyaps_genius"
+
+	# 注释掉所有 .desktop 文件中的 Path= 键
+	# 源 desktop 的 Path 键为宿主绝对路径，在沙箱内无效，残留会干扰启动
+	# 在 ll-builder build 之前执行，确保打包产物不含 Path 键
+	"${project_root}/scripts/disable_desktop_path_key.sh" "${build_tmp_dir}"
 
 	## Building & Exporting
 	ll-builder build ${build_extra_args}

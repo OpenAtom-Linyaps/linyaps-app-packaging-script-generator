@@ -394,7 +394,7 @@ validate_whitelist() {
 	# 按優先級查找白名單配置文件：
 	# 1. 環境變量指定的路徑
 	# 2. 工程目錄下的 config/base_runtime_whitelist.conf
-	# 3. 腳本所在目錄的 config/base_runtime_whitelist.conf
+	# 3. skills/config 全局白名單（相對腳本目錄 ../../config）
 	if [ -n "${LINGLONG_WHITELIST_FILE:-}" ] && [ -f "${LINGLONG_WHITELIST_FILE}" ]; then
 		whitelist_file="${LINGLONG_WHITELIST_FILE}"
 	elif [ -f "${PROJECT_DIR}/config/base_runtime_whitelist.conf" ]; then

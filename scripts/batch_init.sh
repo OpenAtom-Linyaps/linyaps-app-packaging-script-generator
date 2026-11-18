@@ -324,13 +324,10 @@ create_project_structure() {
         fi
     done
 
-    # 拷贝白名单配置文件
+    # 拷贝白名单配置文件（单一来源：skills/config/）
     if [[ -f "${WORKSPACE_ROOT}/skills/config/base_runtime_whitelist.conf" ]]; then
         cp "${WORKSPACE_ROOT}/skills/config/base_runtime_whitelist.conf" "${project_dir}/config/"
         log_info "已拷贝全局白名单配置到工程目录"
-    elif [[ -f "${WORKSPACE_ROOT}/skills/bin2linyaps.deb.project-gen/config/base_runtime_whitelist.conf" ]]; then
-        cp "${WORKSPACE_ROOT}/skills/bin2linyaps.deb.project-gen/config/base_runtime_whitelist.conf" "${project_dir}/config/"
-        log_info "已拷贝 skill 级别白名单配置到工程目录"
     fi
 
     # 生成 linglong.yaml

@@ -14,6 +14,11 @@ user-invocable: false
 分析玲珑构建过程中生成的缺失依赖报告（`missing_deps.json` 或 `missing_deps.csv`），对每个缺失的 `.so` 文件通过 `apt-file` 反向查找所属包名，将包名追加到 `templates/linglong.yaml` 的 `buildext.apt.depends` 中（保留 `${ll_version}` 等 envsubst 变量），同时生成外置配置文件 `missing_deps_urls.conf`。
 项目初始化时，静态脚本 `scripts/download_missing_deps.sh` 会被复制到项目 `scripts/` 目录，
 由 `pak_linyaps.sh` 在构建时调用，解析 `missing_deps_urls.conf` 并下载解压 deb 包。
+该脚本是静态快照：若项目在本脚本修复 `usr/` 平铺（不再产生 `binary_dir/usr/…`，依赖的
+`bin/`/`lib/` 直接落到 `binary_dir/bin|lib`）之前初始化，其 `scripts/` 内仍是旧副本，需重新执行
+初始化时的 `cp "{skill_root}/scripts/download_missing_deps.sh" "{project_dir}/scripts/"` 刷新。
+
+> **上下文效率**：项目初始化时 `download_missing_deps.sh` 随工程复制（`cp` 动作即可），agent **不读该脚本正文**；其 URL 列表（`missing_deps_urls.conf`）与下载逻辑全部在构建运行时由 `pak_linyaps.sh` 调用，无需 init 阶段进入上下文。缓存命中（`DEB_CACHE=/tmp/lingyaps-debs` 已存在）时脚本跳过下载，不重复列举。
 
 ## 关键约束
 

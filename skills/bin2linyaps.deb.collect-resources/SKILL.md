@@ -238,10 +238,10 @@ def fix_desktop_file(desktop_path: str, package_id: str):
 
 ### 5. 验证资源合规性
 
-调用 `common-data-verify.py` 验证：
+调用 `bin2linyaps.compat-testing` 的 `common-data-verify.py` 验证：
 
 ```bash
-python3 common-data-verify.py <files_res_dir> --json --output report.json
+python3 skills/bin2linyaps.compat-testing/scripts/common-data-verify.py <files_res_dir> --json --output report.json
 ```
 
 验证项：
@@ -274,6 +274,8 @@ python3 common-data-verify.py <files_res_dir> --json --output report.json
   }
 }
 ```
+
+> **上下文效率**：输出已含 `collected` 计数字段（desktop/icons/mime 等数量）。Agent 只记录 `collected` 计数与目标目录 listing，**不逐文件 append 完整路径**；无资源包（全为 0）直接输出空树。
 
 ## 资源映射规则
 

@@ -133,14 +133,14 @@ LLM 生成 `pak_linyaps.sh` 时，经常将 `base_id`、`runtime_id` 等变量�
 
 ```bash
 # 检测 pak_linyaps.sh 中的 base/runtime 配置问题
-"${skill_root}/../bin2linyaps.deb.project-gen/scripts/validate_pak_script.sh" "${project_dir}"
+"skills/bin2linyaps.deb.project-gen/scripts/validate_pak_script.sh" "${project_dir}"
 ```
 
 使用 `validate_linglong_yaml.py` 检测 YAML 中的 base/runtime 格式问题：
 
 ```bash
 # 检测 linglong.yaml 中的 base/runtime 格式问题
-"${skill_root}/../bin2linyaps.compat-testing/scripts/validate_linglong_yaml.py" \
+"skills/bin2linyaps.compat-testing/scripts/validate_linglong_yaml.py" \
   --input "${project_dir}/templates/linglong.yaml" \
   --exec-name "${binary_name}"
 ```
@@ -158,7 +158,7 @@ LLM 生成 `pak_linyaps.sh` 时，经常将 `base_id`、`runtime_id` 等变量�
 
 ```bash
 # 自动修复 pak_linyaps.sh 中的变量定义问题
-"${skill_root}/../bin2linyaps.deb.project-gen/scripts/validate_pak_script.sh" "${project_dir}" --fix
+"skills/bin2linyaps.deb.project-gen/scripts/validate_pak_script.sh" "${project_dir}" --fix
 ```
 
 **修复内容：**
@@ -187,10 +187,10 @@ sed -i 's|^runtime:.*|runtime: org.deepin.runtime.dtk/25.2.2|' "${project_dir}/t
 
 ```bash
 # 重新验证脚本
-"${skill_root}/../bin2linyaps.deb.project-gen/scripts/validate_pak_script.sh" "${project_dir}"
+"skills/bin2linyaps.deb.project-gen/scripts/validate_pak_script.sh" "${project_dir}"
 
 # 重新验证 YAML
-"${skill_root}/../bin2linyaps.compat-testing/scripts/validate_linglong_yaml.py" \
+"skills/bin2linyaps.compat-testing/scripts/validate_linglong_yaml.py" \
   --input "${project_dir}/templates/linglong.yaml" \
   --exec-name "${binary_name}"
 ```
@@ -281,9 +281,10 @@ def fix_yaml_required_fields(yaml_path: str, package_info: dict):
     if 'base' not in data:
         data['base'] = package_info.get('base', 'org.deepin.base/23.1.0')
     
-    # 确保command存在
+    # command 字段由 pak_linyaps.sh 构建时通过 wrapper 机制自动设置（bin2linyaps.constraints §1）；
+    # 此处不写死绝对路径，模板正确形式为 `command: ""`，仅保证字段存在。
     if 'command' not in data:
-        data['command'] = [f"/opt/apps/{package_info['package_id']}/files/bin/{package_info['binary_name']}"]
+        data['command'] = []
     
     # 确保build存在
     if 'build' not in data:
@@ -293,23 +294,9 @@ def fix_yaml_required_fields(yaml_path: str, package_info: dict):
         yaml.dump(data, f, default_flow_style=False, allow_unicode=True)
 ```
 
-#### 1.3 command一致性修复
+#### 1.3 command 一致性（无需手动修复）
 
-```python
-def fix_yaml_command(yaml_path: str, desktop_exec: str):
-    """修复command与desktop Exec一致"""
-    # 从desktop Exec提取命令
-    exec_cmd = desktop_exec.split()[0]  # 去除参数如 %U, %F
-    
-    with open(yaml_path, 'r') as f:
-        data = yaml.safe_load(f)
-    
-    # 更新command
-    data['command'] = [exec_cmd]
-    
-    with open(yaml_path, 'w') as f:
-        yaml.dump(data, f, default_flow_style=False)
-```
+`linglong.yaml` 的 `command` 字段由 `pak_linyaps.sh` 构建时通过 wrapper 机制自动设置（见 `bin2linyaps.constraints` §1），**禁止手动写死值、禁止与 desktop Exec 强行一致**。若 command 缺失或为空，属正常预构建状态，不需要修复。
 
 ### 2. desktop文件修复
 
@@ -335,35 +322,16 @@ def fix_desktop_icon(desktop_path: str):
         f.writelines(fixed_lines)
 ```
 
-#### 2.2 Exec路径修复
+#### 2.2 Exec 字段（不修改）
 
 ```python
 def fix_desktop_exec(desktop_path: str, package_id: str):
-    """修复Exec字段"""
-    with open(desktop_path, 'r') as f:
-        lines = f.readlines()
-    
-    fixed_lines = []
-    for line in lines:
-        if line.startswith('Exec='):
-            exec_value = line.split('=', 1)[1].strip()
-            # 去除绝对路径
-            parts = exec_value.split()
-            cmd = parts[0]
-            args = parts[1:] if len(parts) > 1 else []
-            
-            if cmd.startswith('/'):
-                cmd = Path(cmd).name
-            
-            # 重建Exec行
-            new_exec = 'Exec=' + cmd
-            if args:
-                new_exec += ' ' + ' '.join(args)
-            line = new_exec + '\n'
-        fixed_lines.append(line)
-    
-    with open(desktop_path, 'w') as f:
-        f.writelines(fixed_lines)
+    """Exec 不需要修改：由 pak_linyaps.sh 构建时通过 wrapper 机制自动设置。
+
+    依据 bin2linyaps.constraints §1，禁止在收集/修复阶段改写 desktop Exec。
+    保留本函数仅为维持修复流程调用稳定，实际不改写 Exec 内容；只修复 Icon 路径（见 2.1）。
+    """
+    return
 ```
 
 #### 2.3 必需字段补全
@@ -453,7 +421,7 @@ def fix_project(project_dir: str, validation_report: dict) -> dict:
     # 0. 修复 base/runtime 配置（优先级最高）
     # 检测 pak_linyaps.sh 中的变量自引用和空值问题
     import subprocess
-    validate_script = f"{project_dir}/../bin2linyaps.deb.project-gen/scripts/validate_pak_script.sh"
+    validate_script = "skills/bin2linyaps.deb.project-gen/scripts/validate_pak_script.sh"
     if os.path.exists(validate_script):
         result = subprocess.run(
             [validate_script, project_dir, "--fix"],

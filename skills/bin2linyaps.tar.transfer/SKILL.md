@@ -284,7 +284,7 @@ files_res/share/icons/hicolor/
 
 ### Step 7: 生成玲瓏工程
 
-調用 `bin2linyaps.deb.project-gen` 子技能創建工程：
+使用本 skill 自有的 `templates/pak_linyaps.sh` 模板生成玲瓏工程：
 
 ```bash
 # 工程目錄命名
@@ -320,6 +320,9 @@ cp "${skill_root}/scripts/scan_executables.sh" "${project_dir}/scripts/"
 chmod +x "${project_dir}/scripts/scan_executables.sh"
 cp "${skill_root}/scripts/download_missing_deps.sh" "${project_dir}/scripts/"
 chmod +x "${project_dir}/scripts/download_missing_deps.sh"
+# 存量部署提示：download_missing_deps.sh 是静态快照，随初始化复制进工程 scripts/。
+# 若工程在脚本修复 usr/ 平铺（不再产生 binary_dir/usr/…）之前初始化，需重新执行上面这条 cp 刷新，
+# 否则依赖的 bin/lib 仍会落到 /usr/usr/…。
 
 # 拷貝入口腳本分析器（用於檢測使用 $1/$2 的風險腳本）
 cp "${skill_root}/scripts/analyze_entry_script.sh" "${project_dir}/scripts/"
@@ -330,7 +333,7 @@ cp "${skill_root}/scripts/handle_special_paths.sh" "${project_dir}/scripts/"
 chmod +x "${project_dir}/scripts/handle_special_paths.sh"
 
 # 拷貝白名單配置
-cp "${skill_root}/../config/base_runtime_whitelist.conf" "${project_dir}/config/"
+cp "${skill_root}/config/base_runtime_whitelist.conf" "${project_dir}/config/"
 
 # 拷貝 desktop 文件
 cp "${desktop_file}" "${project_dir}/templates/files_res/share/applications/"
@@ -490,5 +493,5 @@ exec "${script_dir}/${wrapper}" "$@"
 
 ### 配置文件
 - `examples/build_config.example.json`：JSON 配置範例文件（`main`/`optional` 分組結構）
-- `base_runtime_whitelist.conf`：base/runtime 白名單配置
+- `base_runtime_whitelist.conf`：本 skill 自帶的白名單自包含副本（`${skill_root}/config/base_runtime_whitelist.conf`）
 - `templates/linglong.yaml`：玲瓏工程模板（含 build 段）

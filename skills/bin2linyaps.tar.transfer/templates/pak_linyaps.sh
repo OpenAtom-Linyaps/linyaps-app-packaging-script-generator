@@ -11,7 +11,7 @@
 #=============================================================================
 
 srcType="tar"
-templateVer="2026.8.14.3"
+templateVer="2026.9.14.1"
 
 set -x
 
@@ -236,7 +236,7 @@ validate_base_runtime_whitelist() {
 	if [ -z "${whitelist_file}" ]; then
 		whitelist_file="${project_root}/config/base_runtime_whitelist.conf"
 		if [ ! -f "${whitelist_file}" ]; then
-			whitelist_file="${skill_root}/../config/base_runtime_whitelist.conf"
+			whitelist_file="${skill_root}/config/base_runtime_whitelist.conf"
 		fi
 	fi
 
@@ -875,7 +875,17 @@ WRAPPER_EOF
 							new_exec="${new_exec} ${exec_args}"
 						fi
 						# 在文件中替換該行
-						sed -i "s|${exec_line}|${new_exec}|" "${desktop_file}"
+                        # 逐行替换完整 Exec 行；原始命令可能含 |、引号、反斜杠等 sed 特殊字符。
+                        local tmp_exec_file="${desktop_file}.tmp"
+                        > "${tmp_exec_file}"
+                        while IFS= read -r line; do
+                            if [[ "${line}" == "${exec_line}" ]]; then
+                                printf '%s\n' "${new_exec}" >> "${tmp_exec_file}"
+                            else
+                                printf '%s\n' "${line}" >> "${tmp_exec_file}"
+                            fi
+                        done < "${desktop_file}"
+                        mv "${tmp_exec_file}" "${desktop_file}"
 					done < <(grep "^Exec=" "${desktop_file}")
 					echo "Updated Exec= in: ${desktop_file} (custom binary: ${exec_target})"
 				else
@@ -981,6 +991,11 @@ WRAPPER_EOF
 	# 此文件用於標識由 linyaps 系統生成的構建產物
 	touch "${binary_dir}/.linyaps_genius"
 	echo "Created identity file: ${binary_dir}/.linyaps_genius"
+
+	# 注释掉所有 .desktop 文件中的 Path= 键
+	# 源 desktop 的 Path 键为宿主绝对路径，在沙箱内无效，残留会干扰启动
+	# 在 ll-builder build 之前执行，确保打包产物不含 Path 键
+	"${project_root}/scripts/disable_desktop_path_key.sh" "${build_tmp_dir}"
 
 	## Building & Exporting
 	ll-builder build ${build_extra_args}
